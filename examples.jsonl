@@ -1,0 +1,8 @@
+{"question": "Get top 5 products with the lowest inventory level.", "sql": "SELECT \"Product ID\", \"Product Name\", \"Inventory Level\"\nFROM inventory\nORDER BY \"Inventory Level\" ASC\nLIMIT 5"}
+{"question": "Show total inventory quantity per category, highest first.", "sql": "SELECT \"Category\", SUM(\"Inventory Level\") AS total_quantity\nFROM inventory\nGROUP BY \"Category\"\nORDER BY total_quantity DESC"}
+{"question": "List products where inventory is below 10 units.", "sql": "SELECT \"Product ID\", \"Product Name\", \"Inventory Level\"\nFROM inventory\nWHERE \"Inventory Level\" < 10\nORDER BY \"Inventory Level\" ASC"}
+{"question": "Average price by category for items with inventory > 0.", "sql": "SELECT \"Category\", AVG(\"Price\") AS avg_price\nFROM inventory\nWHERE \"Inventory Level\" > 0\nGROUP BY \"Category\"\nORDER BY avg_price DESC"}
+{"question": "Show top 10 most expensive products.", "sql": "SELECT \"Product ID\", \"Product Name\", \"Price\"\nFROM inventory\nORDER BY \"Price\" DESC\nLIMIT 10"}
+{"question": "Compute total inventory value per category (price * quantity).", "sql": "SELECT \"Category\", SUM(\"Price\" * \"Inventory Level\") AS total_value\nFROM inventory\nGROUP BY \"Category\"\nORDER BY total_value DESC"}
+{"question": "List products priced between 50 and 100 inclusive.", "sql": "SELECT \"Product ID\", \"Product Name\", \"Price\"\nFROM inventory\nWHERE \"Price\" BETWEEN 50 AND 100\nORDER BY \"Price\" ASC"}
+{"question": "Find products that are out of stock (inventory = 0).", "sql": "SELECT \"Product ID\", \"Product Name\", \"Inventory Level\"\nFROM inventory\nWHERE \"Inventory Level\" = 0\nORDER BY \"Product Name\" ASC"}
