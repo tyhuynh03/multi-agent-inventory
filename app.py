@@ -15,7 +15,6 @@ with st.sidebar:
     st.header("Settings")
     db_path = st.text_input("SQLite path", value="inventory.db")
     model = st.text_input("Groq model", value="openai/gpt-oss-20b")
-    use_fewshot = st.checkbox("Use static few-shot examples", value=True)
     use_retriever = st.checkbox("Use retrieved few-shot (RAG)", value=False)
     examples_path = st.text_input("Examples JSONL path", value="examples.jsonl")
     top_k = st.number_input("Top-k retrieved examples", min_value=1, max_value=10, value=4, step=1)
@@ -56,7 +55,6 @@ with tab_text2sql:
                         question,
                         db,
                         model=model,
-                        use_fewshot=use_fewshot,
                         use_retriever=use_retriever,
                         examples_path=examples_path,
                         top_k=top_k,
@@ -72,7 +70,6 @@ with tab_text2sql:
                         question,
                         db,
                         model=model,
-                        use_fewshot=use_fewshot,
                         use_retriever=use_retriever,
                         examples_path=examples_path,
                         top_k=top_k,

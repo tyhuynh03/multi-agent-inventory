@@ -14,27 +14,16 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 
+# LangSmith tracing helpers
+try:
+    from langsmith.run_helpers import traceable
+except Exception:  # Optional dependency
+    def traceable(*args, **kwargs):  # type: ignore
+        def decorator(fn):
+            return fn
+        return decorator
+
 load_dotenv()
-
-
-FEW_SHOT_EXAMPLES = [
-    (
-        "Get top 5 products with the lowest inventory level.",
-        'SELECT "Product ID", "Product Name", "Inventory Level"\nFROM inventory\nORDER BY "Inventory Level" ASC\nLIMIT 5'
-    ),
-    (
-        "Show total inventory quantity per category, highest first.",
-        'SELECT "Category", SUM("Inventory Level") AS total_quantity\nFROM inventory\nGROUP BY "Category"\nORDER BY total_quantity DESC'
-    ),
-    (
-        "List products where inventory is below 10 units.",
-        'SELECT "Product ID", "Product Name", "Inventory Level"\nFROM inventory\nWHERE "Inventory Level" < 10\nORDER BY "Inventory Level" ASC'
-    ),
-    (
-        "Average price by category for items with inventory > 0.",
-        'SELECT "Category", AVG("Price") AS avg_price\nFROM inventory\nWHERE "Inventory Level" > 0\nGROUP BY "Category"\nORDER BY avg_price DESC'
-    ),
-]
 
 
 class ExampleRetriever:
@@ -44,7 +33,8 @@ class ExampleRetriever:
         self.examples: List[Dict[str, str]] = []
         self.embeddings: Optional[np.ndarray] = None
 
-    def load_examples(self, jsonl_path: str) -> None:
+    @traceable(name="retriever.load_examples")
+    def load_examples(self, jsonl_path: str) -> Dict[str, Union[str, int]]:
         if not os.path.exists(jsonl_path):
             raise FileNotFoundError(f"Examples file not found: {jsonl_path}")
         examples: List[Dict[str, str]] = []
@@ -59,8 +49,11 @@ class ExampleRetriever:
         if not examples:
             raise ValueError("No examples loaded from file.")
         self.examples = examples
+        preview = examples[0]["question"] if examples else ""
+        return {"path": jsonl_path, "num_examples": len(examples), "preview_question": preview}
 
-    def build_index(self) -> None:
+    @traceable(name="retriever.build_index")
+    def build_index(self) -> Dict[str, int]:
         questions = [ex["question"] for ex in self.examples]
         embs = self.model.encode(questions, normalize_embeddings=True)
         embs = np.asarray(embs, dtype="float32")
@@ -69,7 +62,9 @@ class ExampleRetriever:
         index.add(embs)
         self.index = index
         self.embeddings = embs
+        return {"num_examples": len(self.examples), "dim": int(dim)}
 
+    @traceable(name="retriever.retrieve")
     def retrieve(self, query: str, top_k: int = 4) -> List[Dict[str, str]]:
         if self.index is None or self.embeddings is None or not self.examples:
             raise RuntimeError("Retriever is not ready. Call load_examples() and build_index() first.")
@@ -121,19 +116,11 @@ def build_fewshot_block(pairs: List[Dict[str, str]]) -> str:
     return "\n\n".join(blocks)
 
 
-def build_static_fewshot_block() -> str:
-    blocks = []
-    for q, s in FEW_SHOT_EXAMPLES:
-        blocks.append(f"Question: {q}\n```sql\n{s}\n```")
-        
-    return "\n\n".join(blocks)
-
-
+@traceable(name="sql.generate")
 def generate_sql(
     question: str,
     db: SQLDatabase,
     model: str = "openai/gpt-oss-20b",
-    use_fewshot: bool = True,
     use_retriever: bool = False,
     examples_path: str = "examples.jsonl",
     top_k: int = 4,
@@ -146,7 +133,6 @@ def generate_sql(
     chain = create_sql_query_chain(llm, db)
 
     debug: Dict[str, object] = {
-        "use_fewshot": use_fewshot,
         "use_retriever": use_retriever,
         "examples_path": examples_path if use_retriever else None,
         "top_k": top_k if use_retriever else None,
@@ -168,11 +154,7 @@ def generate_sql(
                 fewshot_text = "\n\nFollow the style and schema strictly as in these retrieved examples:\n" + build_fewshot_block(selected)
         except Exception as e:
             debug["retriever_error"] = str(e)
-            if use_fewshot:
-                fewshot_text = "\n\nFollow the style and schema strictly as in these examples:\n" + build_static_fewshot_block()
-    else:
-        if use_fewshot:
-            fewshot_text = "\n\nFollow the style and schema strictly as in these examples:\n" + build_static_fewshot_block()
+            # Không fallback static; giữ empty fewshot_text
 
     prompt = (
         "You are a SQL assistant for a SQLite database. "
