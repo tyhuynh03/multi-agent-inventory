@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
 
-from agents.sql_agent import generate_sql
+from agents.orchestrator import OrchestratorAgent
 from agents.viz_agent import render_auto_chart
 from db.connection import get_db, run_sql, run_sqlite
 from configs.settings import DEFAULT_DB_PATH, DEFAULT_MODEL, DEFAULT_EXAMPLES_PATH, RAG_TOP_K
@@ -27,48 +27,10 @@ st.set_page_config(page_title="Multi-Agent for Inventory", layout="wide")
 
 st.title("🤖 Multi-Agent for Inventory (SQLite + LangChain, Groq)")
 
-# --- Helpers ---
-VISUALIZE_KEYWORDS = [
-    "chart", "plot", "visualize", "visualise", "trend", "over time", "by month", "by week",
-    "by category", "compare", "vs", "distribution", "time series"
-]
-
-@traceable(name="intent.classify")
-def is_visualize_intent(text: str) -> bool:
-    t = (text or "").lower()
-    return any(k in t for k in VISUALIZE_KEYWORDS)
-
-
-@traceable(name="sql.exec")
-def exec_sql_with_fallback(db, db_path: str, sql: str):
-    df, err = run_sql(db, sql)
-    if err and "engine is not available" in err:
-        df, err = run_sqlite(db_path, sql)
-    return {"df": df, "error": err}
-
-
-@traceable(name="agent.orchestrate")
-def orchestrate(question: str, db_path: str, model: str, use_retriever: bool, examples_path: str, top_k: int, show_debug: bool):
-    intent_visualize = is_visualize_intent(question)
-    db = get_db(db_path)
-    # Generate SQL
-    result = generate_sql(
-        question,
-        db,
-        model=model,
-        examples_path=examples_path,
-        top_k=top_k,
-        return_debug=show_debug,
-    )
-    if show_debug:
-        sql, debug = result  # type: ignore
-    else:
-        sql = result  # type: ignore
-        debug = None
-    # Execute
-    exec_result = exec_sql_with_fallback(db, db_path, sql)
-    df, err = exec_result["df"], exec_result["error"]
-    return {"intent_visualize": intent_visualize, "sql": sql, "df": df, "error": err, "debug": debug}
+# --- Initialize Orchestrator ---
+@st.cache_resource
+def get_orchestrator():
+    return OrchestratorAgent()
 
 with st.sidebar:
     st.header("Settings")
@@ -99,47 +61,82 @@ with tab_text2sql:
     with col1:
         run_clicked = st.button("Run Agent")
     with col2:
-        show_schema = st.checkbox("Show schema", value=True, key="schema_text2sql")
+        st.write("")  # Empty space for alignment
 
     if run_clicked:
         if not question.strip():
             st.warning("Please enter a question.")
         else:
             try:
-                if show_schema:
-                    db = get_db(db_path)
-                    st.subheader("Schema")
-                    st.code(db.get_table_info(), language="sql")
-
-                outcome = orchestrate(
-                    question=question,
+                # Use Orchestrator Agent
+                orchestrator = get_orchestrator()
+                result = orchestrator.run_agent(
+                    user_question=question,
                     db_path=db_path,
-                    model=model,
                     use_retriever=use_retriever,
                     examples_path=examples_path,
-                    top_k=top_k,
-                    show_debug=show_debug,
+                    top_k=top_k
                 )
-                sql = outcome["sql"]
-                df = outcome["df"]
-                err = outcome["error"]
-                st.subheader("Generated SQL")
-                st.code(sql, language="sql")
-                if show_debug and outcome["debug"] is not None:
-                    st.subheader("Debug Info")
-                    st.json(outcome["debug"]) 
-                if err:
-                    st.error(err)
+                
+                # Display intent classification
+                st.subheader("🎯 Intent Classification")
+                st.info(f"**Intent:** {result['intent']} | **Agent:** {result['agent']}")
+                
+                if not result["success"]:
+                    st.error(f"❌ {result['error']}")
                 else:
+                    # Display SQL
+                    st.subheader("Generated SQL")
+                    st.code(result["sql"], language="sql")
+                    
+                    # Display results
                     st.subheader("Results")
-                    st.dataframe(df, use_container_width=True)
-                    st.caption(f"Rows: {len(df)}")
-                    if auto_visualize or outcome["intent_visualize"]:
-                        fig = render_auto_chart(df)
-                        if fig:
-                            st.pyplot(fig)
+                    st.success(result["message"])
+                    
+                    # Check if this is schema information
+                    if "schema_info" in result and result["schema_info"]:
+                        st.markdown(result["schema_info"])
+                    elif result["data"] is not None:
+                        st.dataframe(result["data"], use_container_width=True)
+                        st.caption(f"Rows: {len(result['data'])}")
+                    
+                    # Display chart if available
+                    if "chart" in result and result["chart"]:
+                        st.subheader("📊 Visualization")
+                        st.pyplot(result["chart"])
+                    
+                    # Display report summary if available
+                    if "summary" in result and result["summary"]:
+                        st.subheader("📋 Report Summary")
+                        summary = result["summary"]
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.metric("Total Records", summary.get("total_records", 0))
+                        
+                        with col2:
+                            if "total_products" in summary:
+                                st.metric("Products", summary["total_products"])
+                            elif "total_categories" in summary:
+                                st.metric("Categories", summary["total_categories"])
+                        
+                        with col3:
+                            if "total_value" in summary:
+                                st.metric("Total Value", f"${summary['total_value']:,.2f}")
+                            elif "total_revenue" in summary:
+                                st.metric("Total Revenue", f"${summary['total_revenue']:,.2f}")
+                        
+                        # Show additional summary details
+                        if len(summary) > 3:
+                            st.write("**Additional Details:**")
+                            for key, value in summary.items():
+                                if key not in ["total_records", "total_products", "total_categories", "total_value", "total_revenue"]:
+                                    if isinstance(value, float):
+                                        value = f"{value:,.2f}"
+                                    st.write(f"- **{key.replace('_', ' ').title()}:** {value}")
+                        
             except Exception as e:
-                st.error(str(e))
+                st.error(f"❌ Error: {str(e)}")
 
 with tab_sql_console:
     st.write("Run your own SQL (SELECT-only) against SQLite.")
@@ -148,7 +145,7 @@ with tab_sql_console:
     with colc1:
         run_sql_btn = st.button("Run SQL")
     with colc2:
-        show_schema_sql = st.checkbox("Show schema", value=False, key="schema_sql_console")
+        st.write("")  # Empty space for alignment
 
     if run_sql_btn:
         if not sql_text.strip():
@@ -158,10 +155,6 @@ with tab_sql_console:
         else:
             try:
                 db = get_db(db_path)
-                if show_schema_sql:
-                    st.subheader("Schema")
-                    st.code(db.get_table_info(), language="sql")
-
                 df, err = run_sql(db, sql_text)
                 if err and "engine is not available" in err:
                     df, err = run_sqlite(db_path, sql_text)

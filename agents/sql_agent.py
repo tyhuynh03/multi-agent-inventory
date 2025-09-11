@@ -12,6 +12,44 @@ import re
 from pathlib import Path
 
 
+def get_schema_info(db: SQLDatabase) -> str:
+    """Get database schema information for schema-related questions"""
+    try:
+        tables = db.get_usable_table_names()
+        if not tables:
+            return "No tables found in the database."
+        
+        schema_info = f"📋 **Database Schema Information**\n\n"
+        schema_info += f"**Available Tables:** {', '.join(tables)}\n\n"
+        
+        # Get all table info at once
+        try:
+            all_table_info = db.get_table_info()
+            schema_info += f"**Database Schema:**\n"
+            schema_info += f"```sql\n{all_table_info}\n```\n\n"
+        except Exception as e:
+            # Fallback: show table names only
+            schema_info += f"**Available Tables:**\n"
+            for table in tables:
+                schema_info += f"- {table}\n"
+            schema_info += f"\n*Note: Unable to retrieve detailed column information due to: {str(e)}*\n\n"
+        
+        return schema_info
+    except Exception as e:
+        return f"Error getting schema information: {str(e)}"
+
+
+def is_schema_question(question: str) -> bool:
+    """Check if the question is about database schema"""
+    question_lower = question.lower()
+    schema_keywords = [
+        "schema", "table", "tables", "column", "columns", "structure",
+        "what tables", "list tables", "show tables", "database structure",
+        "table info", "table information", "describe table"
+    ]
+    return any(keyword in question_lower for keyword in schema_keywords)
+
+
 def extract_select_sql(text: str) -> str | None:
     m = re.search(r"```sql\s*([\s\S]*?)```", text, re.IGNORECASE)
     if m:
@@ -54,6 +92,13 @@ def generate_sql(
     top_k: int = 4,
     return_debug: bool = False,
 ) -> Union[str, Tuple[str, Dict[str, object]]]:
+    # Check if this is a schema question
+    if is_schema_question(question):
+        schema_info = get_schema_info(db)
+        if return_debug:
+            return schema_info, {"type": "schema", "question": question}
+        return schema_info
+    
     llm = ChatGroq(model=model, temperature=0.1)
     chain = create_sql_query_chain(llm, db)
 
