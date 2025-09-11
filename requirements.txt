@@ -7,3 +7,4 @@ langchain-groq>=0.1.4
 SQLAlchemy>=2.0.32
 faiss-cpu>=1.8.0
 sentence-transformers>=3.0.1
+matplotlib>=3.9.0
