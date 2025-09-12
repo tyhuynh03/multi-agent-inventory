@@ -33,29 +33,38 @@ class IntentClassificationAgent:
             }
         """
         prompt = f"""
-You are an expert intent classifier for warehouse management systems.
+You are an expert intent classifier for warehouse management systems. Analyze the user's question and classify it into the most appropriate category.
 
-Classify the following question into one of 4 categories:
+**Context**: This is a warehouse inventory management system with SQLite database containing inventory data.
 
-1. **query**: Regular questions that need data retrieval
-   - Examples: "How many products are in stock?", "What is the average price by category?"
-   
-2. **visualize**: Requests to create charts, graphs, or visualizations
-   - Examples: "Show inventory trend chart", "Display sales chart over time"
-   
-3. **report**: Generate reports or data summaries
-   - Examples: "Generate low stock report", "Create business summary"
-   
-4. **alert**: Warnings or urgent notifications
-   - Examples: "Alert about products running low", "Notify about unusual inventory levels"
+**Classification Categories:**
 
-Question to classify: "{user_question}"
+1. **query**: Direct data retrieval questions, counting, filtering, or simple data requests
+   - Examples: "How many products are in stock?", "What is the average price by category?", "Show products below 10 units", "List all categories"
 
-Return result in JSON format:
+2. **visualize**: Requests for charts, graphs, plots, or visual representations of data
+   - Examples: "Show inventory trend chart", "Display sales chart over time", "Create a graph of inventory levels", "Plot demand vs supply", "Visualize data"
+
+3. **report**: Requests for comprehensive reports, summaries, or formatted business documents
+   - Examples: "Generate low stock report", "Create monthly summary", "Business performance report", "Inventory analysis report"
+
+4. **schema**: Questions about database structure, tables, columns, or data organization
+   - Examples: "What tables are in the database?", "Show database schema", "List all columns", "Describe table structure"
+
+**Important Guidelines:**
+- Focus on the user's INTENT, not just keywords
+- Consider context and business purpose
+- "Show" can mean different things: "Show data" = query, "Show chart" = visualize, "Show report" = report
+- "Display" usually means visualize when referring to charts/graphs
+- "Generate" or "Create" usually means report when referring to business documents
+
+**Question to classify:** "{user_question}"
+
+**Return result in JSON format:**
 {{
-    "intent": "query|visualize|report|alert",
+    "intent": "query|visualize|report|schema",
     "confidence": 0.95,
-    "reasoning": "Classification reasoning"
+    "reasoning": "Detailed explanation of why this classification was chosen"
 }}
 """
 
@@ -77,7 +86,7 @@ Return result in JSON format:
                 result = json.loads(content)
             
             # Validate intent
-            valid_intents = ["query", "visualize", "report", "alert"]
+            valid_intents = ["query", "visualize", "report", "schema"]
             if result.get("intent") not in valid_intents:
                 result["intent"] = "query"  # Default fallback
                 result["confidence"] = 0.5

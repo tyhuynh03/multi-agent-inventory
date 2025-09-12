@@ -1,4 +1,5 @@
 import os
+from html import escape
 import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
@@ -25,6 +26,21 @@ load_dotenv()
 
 st.set_page_config(page_title="Multi-Agent for Inventory", layout="wide")
 
+# Typography tweak for better readability
+st.markdown(
+    """
+    <style>
+    .summary-text { 
+        font-size: 15px; 
+        line-height: 1.6; 
+        font-family: "Segoe UI", Roboto, Arial, sans-serif; 
+        white-space: pre-wrap;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.title("🤖 Multi-Agent for Inventory (SQLite + LangChain, Groq)")
 
 # --- Initialize Orchestrator ---
@@ -40,7 +56,6 @@ with st.sidebar:
     examples_path = st.text_input("Examples JSONL path", value=DEFAULT_EXAMPLES_PATH)
     top_k = st.number_input("Top-k retrieved examples", min_value=1, max_value=10, value=RAG_TOP_K, step=1)
     show_debug = st.checkbox("Show debug info", value=False)
-    auto_visualize = st.checkbox("Auto visualize when possible", value=True)
     if st.button("Check DB connection"):
         try:
             db = get_db(db_path)
@@ -105,6 +120,12 @@ with tab_text2sql:
                         st.subheader("📊 Visualization")
                         st.pyplot(result["chart"])
                     
+                    # Display natural language summary if available
+                    if "response" in result and result["response"]:
+                        st.subheader("📝 Summary")
+                        safe_text = escape(str(result["response"]))
+                        st.markdown(f"<div class='summary-text'>{safe_text}</div>", unsafe_allow_html=True)
+
                     # Display report summary if available
                     if "summary" in result and result["summary"]:
                         st.subheader("📋 Report Summary")
@@ -134,6 +155,14 @@ with tab_text2sql:
                                     if isinstance(value, float):
                                         value = f"{value:,.2f}"
                                     st.write(f"- **{key.replace('_', ' ').title()}:** {value}")
+
+                    # Debug info (timings, intent, viz spec)
+                    if show_debug and "debug" in result:
+                        st.subheader("🔎 Debug Info")
+                        st.json(result.get("debug", {}))
+                        if "viz_spec" in result and result["viz_spec"]:
+                            st.caption("Visualization Spec")
+                            st.json(result["viz_spec"])
                         
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")

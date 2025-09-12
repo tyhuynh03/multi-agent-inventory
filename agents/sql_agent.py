@@ -92,18 +92,21 @@ def generate_sql(
     top_k: int = 4,
     return_debug: bool = False,
 ) -> Union[str, Tuple[str, Dict[str, object]]]:
-    # Check if this is a schema question
-    if is_schema_question(question):
-        schema_info = get_schema_info(db)
-        if return_debug:
-            return schema_info, {"type": "schema", "question": question}
-        return schema_info
+    # Schema questions are now handled by Intent Agent + Orchestrator
+    # No need for keyword-based detection here
     
     llm = ChatGroq(model=model, temperature=0.1)
     chain = create_sql_query_chain(llm, db)
 
     fewshot_text, meta = build_fewshot_block_from_examples(examples_path, question, top_k=top_k)
 
+    # Get database schema for better SQL generation
+    try:
+        schema_info = db.get_table_info()
+        schema_context = f"\n\n**Database Schema:**\n```sql\n{schema_info}\n```\n"
+    except:
+        schema_context = "\n\n**Available Tables:** inventory\n"
+    
     # Load prompt template from prompts/sql_prompt.txt
     template_path = Path("prompts/sql_prompt.txt")
     if template_path.exists():
@@ -117,6 +120,9 @@ def generate_sql(
             "Do NOT include LIMIT unless the user explicitly asks for it.\n" + fewshot_text + "\n" 
             f"User question: {question}"
         )
+    
+    # Add schema context to prompt
+    prompt = prompt + schema_context
 
     debug: Dict[str, object] = {"model": model, **meta, "retry": False, "prompt_snippet": prompt[:1500]}
 

@@ -5,17 +5,21 @@ Quyết định gọi agent nào dựa trên intent classification
 
 from agents.intent_agent import IntentClassificationAgent
 from agents.sql_agent import generate_sql
-from agents.viz_agent import render_auto_chart
+from agents.viz_agent import VisualizationAgent
 from agents.report_agent import ReportAgent
+from agents.response_agent import ResponseAgent
 from db.connection import get_db, run_sql
 from langsmith.run_helpers import traceable
 import pandas as pd
+import time
 
 
 class OrchestratorAgent:
     def __init__(self):
         self.intent_agent = IntentClassificationAgent()
         self.report_agent = ReportAgent()
+        self.response_agent = ResponseAgent()
+        self.viz_agent = VisualizationAgent()
     
     @traceable(name="orchestrator.run_agent")
     def run_agent(self, user_question: str, db_path: str = "data/inventory.db", 
@@ -33,7 +37,15 @@ class OrchestratorAgent:
             dict: Kết quả từ agent tương ứng
         """
         # Bước 1: Phân loại intent
+        steps = []
+        t0 = time.perf_counter()
         intent_result = self.intent_agent.classify_intent(user_question)
+        t1 = time.perf_counter()
+        steps.append({
+            "step": "intent_classification",
+            "duration_ms": (t1 - t0) * 1000,
+            "detail": intent_result,
+        })
         intent = intent_result["intent"]
         confidence = intent_result["confidence"]
         reasoning = intent_result["reasoning"]
@@ -43,27 +55,37 @@ class OrchestratorAgent:
         
         # Bước 2: Điều hướng đến agent phù hợp
         if intent == "query":
-            return self._handle_query_intent(user_question, db_path, use_retriever, examples_path, top_k)
+            return self._handle_query_intent(
+                user_question, db_path, use_retriever, examples_path, top_k,
+                debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps, "context": {"db_path": db_path, "examples_path": examples_path, "top_k": top_k}}
+            )
         
         elif intent == "visualize":
-            return self._handle_visualize_intent(user_question, db_path, use_retriever, examples_path, top_k)
+            return self._handle_visualize_intent(
+                user_question, db_path, use_retriever, examples_path, top_k,
+                debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps, "context": {"db_path": db_path, "examples_path": examples_path, "top_k": top_k}}
+            )
         
         elif intent == "report":
-            return self._handle_report_intent(user_question, db_path, use_retriever, examples_path, top_k)
+            return self._handle_report_intent(
+                user_question, db_path, use_retriever, examples_path, top_k,
+                debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps, "context": {"db_path": db_path, "examples_path": examples_path, "top_k": top_k}}
+            )
         
-        elif intent == "alert":
-            return self._handle_alert_intent(user_question, db_path, use_retriever, examples_path, top_k)
+        elif intent == "schema":
+            return self._handle_schema_intent(user_question, db_path)
         
         else:
             # Fallback về query
             return self._handle_query_intent(user_question, db_path, use_retriever, examples_path, top_k)
     
     def _handle_query_intent(self, user_question: str, db_path: str, use_retriever: bool, 
-                           examples_path: str, top_k: int) -> dict:
+                           examples_path: str, top_k: int, debug_base: dict | None = None) -> dict:
         """Xử lý query intent - SQL thông thường"""
         try:
             # Generate SQL
             db = get_db(db_path)
+            t_sql0 = time.perf_counter()
             result = generate_sql(
                 question=user_question,
                 db=db,
@@ -71,6 +93,12 @@ class OrchestratorAgent:
                 examples_path=examples_path,
                 top_k=top_k
             )
+            t_sql1 = time.perf_counter()
+            (debug_base or {}).get("steps", []).append({
+                "step": "sql_generate",
+                "duration_ms": (t_sql1 - t_sql0) * 1000,
+                "detail": {"model": "openai/gpt-oss-20b"}
+            })
             
             # Check if this is a schema response
             if isinstance(result, str) and "📋 **Database Schema Information**" in result:
@@ -93,7 +121,14 @@ class OrchestratorAgent:
                 }
             
             # Execute SQL
+            t_exec0 = time.perf_counter()
             df, error = run_sql(db, result)
+            t_exec1 = time.perf_counter()
+            (debug_base or {}).get("steps", []).append({
+                "step": "sql_execute",
+                "duration_ms": (t_exec1 - t_exec0) * 1000,
+                "detail": {"rows": 0 if error else len(df), "error": error}
+            })
             if error:
                 return {
                     "success": False,
@@ -102,13 +137,20 @@ class OrchestratorAgent:
                     "agent": "sql_agent"
                 }
             
+            nl = self.response_agent.generate_response(user_question, df, result)
             return {
                 "success": True,
                 "intent": "query",
                 "agent": "sql_agent",
                 "sql": result,
                 "data": df,
-                "message": f"✅ Query successful! Found {len(df)} records."
+                "message": f"✅ Query successful! Found {len(df)} records.",
+                "response": nl,
+                "debug": {
+                    **(debug_base or {}),
+                    "t_sql_generate_ms": (t_sql1 - t_sql0)*1000,
+                    "t_sql_execute_ms": (t_exec1 - t_exec0)*1000,
+                }
             }
             
         except Exception as e:
@@ -120,11 +162,12 @@ class OrchestratorAgent:
             }
     
     def _handle_visualize_intent(self, user_question: str, db_path: str, use_retriever: bool, 
-                               examples_path: str, top_k: int) -> dict:
+                               examples_path: str, top_k: int, debug_base: dict | None = None) -> dict:
         """Xử lý visualize intent - SQL + Chart"""
         try:
             # Generate SQL
             db = get_db(db_path)
+            t_sql0 = time.perf_counter()
             sql = generate_sql(
                 question=user_question,
                 db=db,
@@ -132,6 +175,12 @@ class OrchestratorAgent:
                 examples_path=examples_path,
                 top_k=top_k
             )
+            t_sql1 = time.perf_counter()
+            (debug_base or {}).get("steps", []).append({
+                "step": "sql_generate",
+                "duration_ms": (t_sql1 - t_sql0) * 1000,
+                "detail": {"model": "openai/gpt-oss-20b"}
+            })
             
             if not sql:
                 return {
@@ -142,7 +191,14 @@ class OrchestratorAgent:
                 }
             
             # Execute SQL
+            t_exec0 = time.perf_counter()
             df, error = run_sql(db, sql)
+            t_exec1 = time.perf_counter()
+            (debug_base or {}).get("steps", []).append({
+                "step": "sql_execute",
+                "duration_ms": (t_exec1 - t_exec0) * 1000,
+                "detail": {"rows": 0 if error else len(df), "error": error}
+            })
             if error:
                 return {
                     "success": False,
@@ -159,8 +215,16 @@ class OrchestratorAgent:
                     "agent": "viz_agent"
                 }
             
-            # Generate chart
-            chart_result = render_auto_chart(df)
+            # Plan + Render chart via agent (không tạo summary cho visualize)
+            t_viz0 = time.perf_counter()
+            viz = self.viz_agent.plan_and_render(user_question, df)
+            t_viz1 = time.perf_counter()
+            (debug_base or {}).get("steps", []).append({
+                "step": "viz_plan_render",
+                "duration_ms": (t_viz1 - t_viz0) * 1000,
+                "detail": viz.get("spec")
+            })
+            chart_result = viz.get("figure")
             
             return {
                 "success": True,
@@ -169,7 +233,14 @@ class OrchestratorAgent:
                 "sql": sql,
                 "data": df,
                 "chart": chart_result,
-                "message": f"📊 Chart generated successfully from {len(df)} records!"
+                "viz_spec": viz.get("spec"),
+                "message": f"📊 Chart generated successfully from {len(df)} records!",
+                "debug": {
+                    **(debug_base or {}),
+                    "t_sql_generate_ms": (t_sql1 - t_sql0)*1000,
+                    "t_sql_execute_ms": (t_exec1 - t_exec0)*1000,
+                    "t_viz_ms": (t_viz1 - t_viz0)*1000,
+                }
             }
             
         except Exception as e:
@@ -259,13 +330,28 @@ class OrchestratorAgent:
         
         return params
     
-    def _handle_alert_intent(self, user_question: str, db_path: str, use_retriever: bool, 
-                           examples_path: str, top_k: int) -> dict:
-        """Xử lý alert intent - Cảnh báo"""
-        # TODO: Implement Alert Agent
-        return {
-            "success": False,
-            "error": "Alert Agent not yet implemented",
-            "intent": "alert",
-            "agent": "alert_agent"
-        }
+    def _handle_schema_intent(self, user_question: str, db_path: str) -> dict:
+        """Handle schema intent - Database structure information"""
+        try:
+            from agents.sql_agent import get_schema_info
+            
+            db = get_db(db_path)
+            schema_info = get_schema_info(db)
+            
+            return {
+                "success": True,
+                "intent": "schema",
+                "agent": "schema_agent",
+                "sql": "Schema Information",
+                "data": None,
+                "schema_info": schema_info,
+                "message": "📋 Database schema information retrieved successfully!"
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Schema processing error: {str(e)}",
+                "intent": "schema",
+                "agent": "schema_agent"
+            }
