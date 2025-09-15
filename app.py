@@ -166,11 +166,16 @@ with tab_text2sql:
                         
                         # Display the response
                         full_response = "\n\n".join(response_parts)
+                        # Persist table in chat history so it survives reruns
+                        history_suffix = ""
+                        if result.get("response_table_md"):
+                            history_suffix = "\n\n" + result["response_table_md"]
+                        assistant_history_content = full_response + history_suffix
                         with st.chat_message("assistant"):
-                            st.markdown(full_response, unsafe_allow_html=True)
+                            st.markdown(assistant_history_content, unsafe_allow_html=True)
                         
-                        # Add to chat history
-                        st.session_state.messages.append({"role": "assistant", "content": full_response})
+                        # Add to chat history (including table markdown if present)
+                        st.session_state.messages.append({"role": "assistant", "content": assistant_history_content})
                         
                         # Display chart if available
                         if "chart" in result and result["chart"]:

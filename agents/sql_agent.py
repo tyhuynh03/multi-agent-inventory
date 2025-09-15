@@ -2,7 +2,6 @@ import os
 import yaml
 from typing import Dict, List, Tuple, Union
 
-from langchain.chains import create_sql_query_chain
 from langchain_groq import ChatGroq
 from langchain_community.utilities import SQLDatabase
 
@@ -122,7 +121,6 @@ def generate_sql(
     # No need for keyword-based detection here
     
     llm = ChatGroq(model=model, temperature=0.1)
-    chain = create_sql_query_chain(llm, db)
 
     fewshot_text, meta = build_fewshot_block_from_examples(examples_path, question, top_k=top_k)
 
@@ -148,8 +146,11 @@ def generate_sql(
 
     debug: Dict[str, object] = {"model": model, **meta, "retry": False, "prompt_snippet": prompt[:1500]}
 
-    raw = chain.invoke({"question": prompt})
-    text = raw if isinstance(raw, str) else str(raw)
+    # Directly invoke LLM with our composed prompt to avoid LangChain's default SQL prompt/schema
+    raw_msg = llm.invoke(prompt)
+    text = getattr(raw_msg, "content", raw_msg)
+    if not isinstance(text, str):
+        text = str(text)
     debug["raw_response"] = text[:1500]
 
     sql = extract_select_sql(text)

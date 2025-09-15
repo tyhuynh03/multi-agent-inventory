@@ -8,3 +8,5 @@
 {"question": "Compute total inventory value per category (price * quantity).", "sql": "SELECT \"Category\", SUM(\"Price\" * \"Inventory Level\") AS total_value\nFROM inventory\nGROUP BY \"Category\"\nORDER BY total_value DESC"}
 {"question": "List products priced between 50 and 100 inclusive.", "sql": "SELECT \"Product ID\", \"Price\"\nFROM inventory\nWHERE \"Price\" BETWEEN 50 AND 100\nORDER BY \"Price\" ASC"}
 {"question": "Find products that are out of stock (inventory = 0).", "sql": "SELECT \"Product ID\", \"Inventory Level\"\nFROM inventory\nWHERE \"Inventory Level\" = 0\nORDER BY \"Product ID\" ASC"}
+
+{"question": "Which products at S005 had Inventory Level < 50 or below Demand Forecast in 2023-01?", "sql": "SELECT \"Date\", \"Product ID\", \"Inventory Level\", \"Demand Forecast\"\nFROM inventory\nWHERE \"Store ID\" = 'S005'\n  AND \"Date\" >= '2023-01-01'\n  AND \"Date\" < '2023-02-01'\n  AND (\"Inventory Level\" < 50 OR \"Inventory Level\" < \"Demand Forecast\")\nORDER BY \"Date\" ASC, \"Product ID\" ASC"}

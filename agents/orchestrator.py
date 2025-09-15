@@ -145,7 +145,8 @@ class OrchestratorAgent:
                 "sql": result,
                 "data": df,
                 "message": f"✅ Query successful! Found {len(df)} records.",
-                "response": nl,
+                "response": nl.get("text"),
+                "response_table_md": nl.get("table_md"),
                 "debug": {
                     **(debug_base or {}),
                     "t_sql_generate_ms": (t_sql1 - t_sql0)*1000,
