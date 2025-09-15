@@ -5,7 +5,7 @@ import pandas as pd
 from dotenv import load_dotenv
 
 from agents.orchestrator import OrchestratorAgent
-from agents.viz_agent import render_auto_chart
+# from agents.viz_agent import render_auto_chart  # Removed - no longer needed
 from db.connection import get_db, run_sql, run_sqlite
 from configs.settings import DEFAULT_DB_PATH, DEFAULT_MODEL, DEFAULT_EXAMPLES_PATH, RAG_TOP_K
 
@@ -93,27 +93,27 @@ with tab_text2sql:
                     top_k=top_k
                 )
                 
-                # Display intent classification
-                st.subheader("🎯 Intent Classification")
-                st.info(f"**Intent:** {result['intent']} | **Agent:** {result['agent']}")
-                
                 if not result["success"]:
                     st.error(f"❌ {result['error']}")
                 else:
-                    # Display SQL
-                    st.subheader("Generated SQL")
-                    st.code(result["sql"], language="sql")
-                    
-                    # Display results
-                    st.subheader("Results")
-                    st.success(result["message"])
-                    
-                    # Check if this is schema information
-                    if "schema_info" in result and result["schema_info"]:
-                        st.markdown(result["schema_info"])
-                    elif result["data"] is not None:
-                        st.dataframe(result["data"], use_container_width=True)
-                        st.caption(f"Rows: {len(result['data'])}")
+                    # Display everything in one collapsible section
+                    with st.expander(f"⚙️ Technical Details", expanded=False):
+                        # Intent Classification
+                        if "intent" in result:
+                            st.markdown(f"**Intent:** {result['intent']}")
+                        
+                        # Display SQL
+                        st.markdown("**Generated SQL:**")
+                        st.code(result["sql"], language="sql")
+                        
+                        # Display results
+                        st.markdown("**Results:**")
+                        # Check if this is schema information
+                        if "schema_info" in result and result["schema_info"]:
+                            st.markdown(result["schema_info"])
+                        elif result["data"] is not None:
+                            st.dataframe(result["data"], width='stretch')
+                            st.caption(f"Rows: {len(result['data'])}")
                     
                     # Display chart if available
                     if "chart" in result and result["chart"]:
@@ -125,6 +125,11 @@ with tab_text2sql:
                         st.subheader("📝 Summary")
                         safe_text = escape(str(result["response"]))
                         st.markdown(f"<div class='summary-text'>{safe_text}</div>", unsafe_allow_html=True)
+                        
+                        # Also show the SQL used for this query
+                        if "sql" in result and result["sql"]:
+                            st.markdown("**SQL Query Used:**")
+                            st.code(result["sql"], language="sql")
 
                     # Display report summary if available
                     if "summary" in result and result["summary"]:
@@ -192,7 +197,7 @@ with tab_sql_console:
                 else:
                     st.subheader("Results")
                     st.code(sql_text, language="sql")
-                    st.dataframe(df, use_container_width=True)
+                    st.dataframe(df, width='stretch')
                     st.caption(f"Rows: {len(df)}")
             except Exception as e:
                 st.error(str(e))

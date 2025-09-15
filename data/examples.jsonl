@@ -1,8 +1,10 @@
-{"question": "Get top 5 products with the lowest inventory level.", "sql": "SELECT \"Product ID\", \"Product Name\", \"Inventory Level\"\nFROM inventory\nORDER BY \"Inventory Level\" ASC\nLIMIT 5"}
+{"question": "What is the Inventory Level of S001 at P0001 on 2022-01-01?", "sql": "SELECT \"Inventory Level\"\nFROM inventory\nWHERE \"Store ID\" = 'S001' AND \"Product ID\" = 'P0001' AND \"Date\" = '2022-01-01'"}
+{"question": "What are the top 5 products with the highest Units Sold at S001 in January 2022?", "sql": "SELECT \"Product ID\", SUM(\"Units Sold\") AS total_units_sold\nFROM inventory\nWHERE \"Store ID\" = 'S001'\n  AND \"Date\" >= '2022-01-01'\n  AND \"Date\" < '2022-02-01'\nGROUP BY \"Product ID\"\nORDER BY total_units_sold DESC\nLIMIT 5"}
+{"question": "Get top 5 products with the lowest inventory level.", "sql": "SELECT \"Product ID\", \"Inventory Level\"\nFROM inventory\nORDER BY \"Inventory Level\" ASC\nLIMIT 5"}
 {"question": "Show total inventory quantity per category, highest first.", "sql": "SELECT \"Category\", SUM(\"Inventory Level\") AS total_quantity\nFROM inventory\nGROUP BY \"Category\"\nORDER BY total_quantity DESC"}
-{"question": "List products where inventory is below 10 units.", "sql": "SELECT \"Product ID\", \"Product Name\", \"Inventory Level\"\nFROM inventory\nWHERE \"Inventory Level\" < 10\nORDER BY \"Inventory Level\" ASC"}
+{"question": "List products where inventory is below 10 units.", "sql": "SELECT \"Product ID\", \"Inventory Level\"\nFROM inventory\nWHERE \"Inventory Level\" < 10\nORDER BY \"Inventory Level\" ASC"}
 {"question": "Average price by category for items with inventory > 0.", "sql": "SELECT \"Category\", AVG(\"Price\") AS avg_price\nFROM inventory\nWHERE \"Inventory Level\" > 0\nGROUP BY \"Category\"\nORDER BY avg_price DESC"}
-{"question": "Show top 10 most expensive products.", "sql": "SELECT \"Product ID\", \"Product Name\", \"Price\"\nFROM inventory\nORDER BY \"Price\" DESC\nLIMIT 10"}
+{"question": "Show top 10 most expensive products.", "sql": "SELECT \"Product ID\", \"Price\"\nFROM inventory\nORDER BY \"Price\" DESC\nLIMIT 10"}
 {"question": "Compute total inventory value per category (price * quantity).", "sql": "SELECT \"Category\", SUM(\"Price\" * \"Inventory Level\") AS total_value\nFROM inventory\nGROUP BY \"Category\"\nORDER BY total_value DESC"}
-{"question": "List products priced between 50 and 100 inclusive.", "sql": "SELECT \"Product ID\", \"Product Name\", \"Price\"\nFROM inventory\nWHERE \"Price\" BETWEEN 50 AND 100\nORDER BY \"Price\" ASC"}
-{"question": "Find products that are out of stock (inventory = 0).", "sql": "SELECT \"Product ID\", \"Product Name\", \"Inventory Level\"\nFROM inventory\nWHERE \"Inventory Level\" = 0\nORDER BY \"Product Name\" ASC"}
+{"question": "List products priced between 50 and 100 inclusive.", "sql": "SELECT \"Product ID\", \"Price\"\nFROM inventory\nWHERE \"Price\" BETWEEN 50 AND 100\nORDER BY \"Price\" ASC"}
+{"question": "Find products that are out of stock (inventory = 0).", "sql": "SELECT \"Product ID\", \"Inventory Level\"\nFROM inventory\nWHERE \"Inventory Level\" = 0\nORDER BY \"Product ID\" ASC"}

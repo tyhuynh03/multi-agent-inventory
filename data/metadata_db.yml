@@ -1,0 +1,50 @@
+database_description: Retail store inventory management database
+tables:
+  inventory:
+    description: Contains daily inventory data for retail stores including sales, orders, and forecasts
+    columns:
+    - name: Date
+      type: TEXT
+      description: Date of the record in YYYY-MM-DD format (e.g., '2022-01-01')
+    - name: Store ID
+      type: TEXT
+      description: Unique identifier for each store (e.g., 'S001', 'S002')
+    - name: Product ID
+      type: TEXT
+      description: Unique identifier for each product (e.g., 'P0001', 'P0002')
+    - name: Category
+      type: TEXT
+      description: Product category (e.g., 'Electronics', 'Groceries', 'Toys')
+    - name: Region
+      type: TEXT
+      description: Geographic region where store is located (e.g., 'North', 'South', 'East', 'West')
+    - name: Inventory Level
+      type: INTEGER
+      description: Current stock quantity available in the store
+    - name: Units Sold
+      type: INTEGER
+      description: Number of units sold on this date
+    - name: Units Ordered
+      type: INTEGER
+      description: Number of units ordered/replenished on this date
+    - name: Demand Forecast
+      type: REAL
+      description: Predicted demand for this product on this date
+    - name: Price
+      type: REAL
+      description: Selling price per unit in USD
+    - name: Discount
+      type: INTEGER
+      description: Discount percentage applied (0-100)
+    - name: Weather Condition
+      type: TEXT
+      description: Weather condition on this date (e.g., 'Sunny', 'Rainy', 'Cloudy')
+    - name: Holiday/Promotion
+      type: INTEGER
+      description: Whether there was a holiday or promotion (1 = yes, 0 = no)
+    - name: Competitor Pricing
+      type: REAL
+      description: Average competitor price for similar products
+    - name: Seasonality
+      type: TEXT
+      description: Seasonal period (e.g., 'Summer', 'Autumn', 'Winter', 'Spring')
