@@ -26,6 +26,10 @@ load_dotenv()
 
 st.set_page_config(page_title="Multi-Agent for Inventory", layout="wide")
 
+# Initialize session state for chat history
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
 # Typography tweak for better readability
 st.markdown(
     """
@@ -70,15 +74,32 @@ tab_text2sql, tab_sql_console = st.tabs(["Text-to-SQL", "SQL Console"])
 
 with tab_text2sql:
     st.write("Enter your question in English. The app will generate a `SELECT` query and run it on SQLite.")
-    question = st.text_area("Question / Request", height=120, placeholder="e.g., Trend of total inventory for store S001 over time.")
-
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        run_clicked = st.button("Run Agent")
-    with col2:
-        st.write("")  # Empty space for alignment
-
-    if run_clicked:
+    
+    # Clear chat button
+    if st.button("🗑️ Clear Chat History"):
+        st.session_state.messages = []
+        st.rerun()
+    
+    # Create container for chat messages
+    chat_container = st.container()
+    
+    # Display chat history in the container
+    with chat_container:
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+    
+    # Chat input at the bottom
+    if question := st.chat_input("Ask about inventory data..."):
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": question})
+        
+        # Display user message in chat container
+        with chat_container:
+            with st.chat_message("user"):
+                st.markdown(question)
+        
+        # Process with agent
         if not question.strip():
             st.warning("Please enter a question.")
         else:
@@ -93,81 +114,76 @@ with tab_text2sql:
                     top_k=top_k
                 )
                 
-                if not result["success"]:
-                    st.error(f"❌ {result['error']}")
-                else:
-                    # Display everything in one collapsible section
-                    with st.expander(f"⚙️ Technical Details", expanded=False):
-                        # Intent Classification
-                        if "intent" in result:
-                            st.markdown(f"**Intent:** {result['intent']}")
-                        
-                        # Display SQL
-                        st.markdown("**Generated SQL:**")
-                        st.code(result["sql"], language="sql")
-                        
-                        # Display results
-                        st.markdown("**Results:**")
-                        # Check if this is schema information
-                        if "schema_info" in result and result["schema_info"]:
-                            st.markdown(result["schema_info"])
-                        elif result["data"] is not None:
-                            st.dataframe(result["data"], width='stretch')
-                            st.caption(f"Rows: {len(result['data'])}")
-                    
-                    # Display chart if available
-                    if "chart" in result and result["chart"]:
-                        st.subheader("📊 Visualization")
-                        st.pyplot(result["chart"])
-                    
-                    # Display natural language summary if available
-                    if "response" in result and result["response"]:
-                        st.subheader("📝 Summary")
-                        safe_text = escape(str(result["response"]))
-                        st.markdown(f"<div class='summary-text'>{safe_text}</div>", unsafe_allow_html=True)
-                        
-                        # Also show the SQL used for this query
-                        if "sql" in result and result["sql"]:
-                            st.markdown("**SQL Query Used:**")
+                # Display assistant response in chat container
+                with chat_container:
+                    if not result["success"]:
+                        with st.chat_message("assistant"):
+                            st.error(f"❌ {result['error']}")
+                            # Add error to chat history
+                            st.session_state.messages.append({"role": "assistant", "content": f"❌ Error: {result['error']}"})
+                    else:
+                        # Technical details shown between user and assistant reply
+                        with st.expander("⚙️ Technical Details", expanded=False):
+                            # Intent Classification
+                            if "intent" in result:
+                                st.markdown(f"**Intent:** {result['intent']}")
+                            
+                            # Display SQL
+                            st.markdown("**Generated SQL:**")
                             st.code(result["sql"], language="sql")
+                            
+                            # Display results
+                            st.markdown("**Results:**")
+                            if "schema_info" in result and result["schema_info"]:
+                                st.markdown(result["schema_info"])
+                            elif result["data"] is not None:
+                                st.dataframe(result["data"], use_container_width=True)
+                                st.caption(f"Rows: {len(result['data'])}")
 
-                    # Display report summary if available
-                    if "summary" in result and result["summary"]:
-                        st.subheader("📋 Report Summary")
-                        summary = result["summary"]
-                        col1, col2, col3 = st.columns(3)
+                        # Build response content (no 'Results: X rows' in main reply)
+                        response_parts = []
                         
-                        with col1:
-                            st.metric("Total Records", summary.get("total_records", 0))
+                        # Add natural language summary if available
+                        if "response" in result and result["response"]:
+                            safe_text = escape(str(result["response"]))
+                            response_parts.append(f"<div class='summary-text'>{safe_text}</div>")
                         
-                        with col2:
+                        # Add SQL query
+                        if "sql" in result and result["sql"]:
+                            response_parts.append(f"**SQL Query:**\n```sql\n{result['sql']}\n```")
+                        
+                        # Add chart info
+                        if "chart" in result and result["chart"]:
+                            response_parts.append("📊 **Visualization generated**")
+                        
+                        # Add report summary
+                        if "summary" in result and result["summary"]:
+                            summary = result["summary"]
+                            summary_text = f"📋 **Report Summary:** {summary.get('total_records', 0)} records"
                             if "total_products" in summary:
-                                st.metric("Products", summary["total_products"])
-                            elif "total_categories" in summary:
-                                st.metric("Categories", summary["total_categories"])
+                                summary_text += f", {summary['total_products']} products"
+                            response_parts.append(summary_text)
                         
-                        with col3:
-                            if "total_value" in summary:
-                                st.metric("Total Value", f"${summary['total_value']:,.2f}")
-                            elif "total_revenue" in summary:
-                                st.metric("Total Revenue", f"${summary['total_revenue']:,.2f}")
+                        # Display the response
+                        full_response = "\n\n".join(response_parts)
+                        with st.chat_message("assistant"):
+                            st.markdown(full_response, unsafe_allow_html=True)
                         
-                        # Show additional summary details
-                        if len(summary) > 3:
-                            st.write("**Additional Details:**")
-                            for key, value in summary.items():
-                                if key not in ["total_records", "total_products", "total_categories", "total_value", "total_revenue"]:
-                                    if isinstance(value, float):
-                                        value = f"{value:,.2f}"
-                                    st.write(f"- **{key.replace('_', ' ').title()}:** {value}")
-
-                    # Debug info (timings, intent, viz spec)
-                    if show_debug and "debug" in result:
-                        st.subheader("🔎 Debug Info")
-                        st.json(result.get("debug", {}))
-                        if "viz_spec" in result and result["viz_spec"]:
-                            st.caption("Visualization Spec")
-                            st.json(result["viz_spec"])
+                        # Add to chat history
+                        st.session_state.messages.append({"role": "assistant", "content": full_response})
+                        
+                        # Display chart if available
+                        if "chart" in result and result["chart"]:
+                            st.subheader("📊 Visualization")
+                            st.pyplot(result["chart"])
+                        
+                        # Debug info (timings, intent, viz spec)
+                        if show_debug and "debug" in result:
+                            st.subheader("🔎 Debug Info")
+                            st.json(result.get("debug", {}))
+                            if "viz_spec" in result and result["viz_spec"]:
+                                st.caption("Visualization Spec")
+                                st.json(result["viz_spec"])
                         
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
@@ -197,7 +213,7 @@ with tab_sql_console:
                 else:
                     st.subheader("Results")
                     st.code(sql_text, language="sql")
-                    st.dataframe(df, width='stretch')
+                    st.dataframe(df, use_container_width=True)
                     st.caption(f"Rows: {len(df)}")
             except Exception as e:
                 st.error(str(e))
