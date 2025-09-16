@@ -180,7 +180,13 @@ with tab_text2sql:
                         # Display chart if available
                         if "chart" in result and result["chart"]:
                             st.subheader("📊 Visualization")
-                            st.pyplot(result["chart"])
+                            try:
+                                import plotly.graph_objects as go
+                                import plotly.io as pio
+                                from streamlit import plotly_chart
+                                st.plotly_chart(result["chart"], use_container_width=True)
+                            except Exception:
+                                st.pyplot(result["chart"])  # fallback matplotlib
                         
                         # Debug info (timings, intent, viz spec)
                         if show_debug and "debug" in result:

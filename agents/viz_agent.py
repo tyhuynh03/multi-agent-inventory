@@ -3,6 +3,8 @@ import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import plotly.express as px
+import plotly.graph_objects as go
 
 from utils.logger import traceable
 from langchain_groq import ChatGroq
@@ -57,7 +59,7 @@ Sample rows: {sample}
         return spec
 
     @traceable(name="viz.render_from_spec")
-    def render_from_spec(self, df: pd.DataFrame, spec: Dict[str, Any]) -> Optional[plt.Figure]:
+    def render_from_spec(self, df: pd.DataFrame, spec: Dict[str, Any]) -> Optional[go.Figure]:
         if df is None or df.empty:
             return None
         chart_type = spec.get("chart_type", "line")
@@ -89,34 +91,52 @@ Sample rows: {sample}
                 .agg(agg_func)
             )
 
-        fig, ax = plt.subplots(figsize=(10, 4))
-        if chart_type == "bar" and x and y_cols:
-            if group_by and group_by in working.columns:
-                # vẽ stacked/clustered đơn giản theo từng group
-                for col in y_cols:
-                    for name, part in working.groupby(group_by):
-                        ax.bar(part[x].astype(str), part[col], label=f"{name}-{col}")
+        # Plotly rendering
+        try:
+            if chart_type == "bar" and x and y_cols:
+                if len(y_cols) > 1:
+                    df_long = working.melt(id_vars=[x], value_vars=y_cols, var_name="Series", value_name="Value")
+                    fig = px.bar(df_long, x=x, y="Value", color="Series", barmode="group", title=title)
+                else:
+                    col = y_cols[0]
+                    if group_by and group_by in working.columns:
+                        fig = px.bar(working, x=x, y=col, color=group_by, barmode="group", title=title)
+                    else:
+                        fig = px.bar(working, x=x, y=col, title=title)
             else:
+                # default line; if multiple y -> add each as a trace
+                if x and y_cols:
+                    fig = go.Figure()
+                    if group_by and group_by in working.columns:
+                        for name, part in working.groupby(group_by):
+                            for col in y_cols:
+                                fig.add_trace(go.Scatter(x=part[x], y=part[col], mode="lines+markers", name=f"{name}-{col}"))
+                    else:
+                        for col in y_cols:
+                            fig.add_trace(go.Scatter(x=working[x], y=working[col], mode="lines+markers", name=col))
+                    fig.update_layout(title=title, xaxis_title=str(x), yaxis_title="Value")
+                else:
+                    return None
+
+            fig.update_layout(template="plotly_white")
+            return fig
+        except Exception:
+            # Fallback to matplotlib if plotly fails
+            fig, ax = plt.subplots(figsize=(10, 4))
+            if chart_type == "bar" and x and y_cols:
                 col = y_cols[0]
                 ax.bar(working[x].astype(str), working[col])
-        else:  # default line
-            if x and y_cols:
-                if group_by and group_by in working.columns:
-                    for name, part in working.groupby(group_by):
-                        for col in y_cols:
-                            ax.plot(part[x], part[col], marker="o", linewidth=1.2, label=f"{name}-{col}")
-                else:
-                    for col in y_cols:
-                        ax.plot(working[x], working[col], marker="o", linewidth=1.2, label=col)
-
-        ax.set_title(title)
-        if x:
-            ax.set_xlabel(x)
-        ax.set_ylabel("Value")
-        ax.grid(True, alpha=0.3)
-        if len(ax.lines) + len(ax.patches) > 1:
-            ax.legend()
-        return fig
+            else:
+                for col in y_cols:
+                    ax.plot(working[x], working[col], marker="o", linewidth=1.2, label=col)
+            ax.set_title(title)
+            if x:
+                ax.set_xlabel(x)
+            ax.set_ylabel("Value")
+            ax.grid(True, alpha=0.3)
+            if len(ax.lines) + len(ax.patches) > 1:
+                ax.legend()
+            return fig
 
     @traceable(name="viz.plan_and_render")
     def plan_and_render(self, question: str, df: pd.DataFrame) -> Dict[str, Any]:
