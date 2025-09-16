@@ -56,17 +56,31 @@ with st.sidebar:
     st.header("Settings")
     db_path = st.text_input("SQLite path", value=DEFAULT_DB_PATH)
     model = st.text_input("Groq model", value=DEFAULT_MODEL)
-    use_retriever = st.checkbox("Use retrieved few-shot (RAG)", value=False)
+    use_semantic_search = st.checkbox("Use semantic search (ChromaDB)", value=True)
     examples_path = st.text_input("Examples JSONL path", value=DEFAULT_EXAMPLES_PATH)
     top_k = st.number_input("Top-k retrieved examples", min_value=1, max_value=10, value=RAG_TOP_K, step=1)
     show_debug = st.checkbox("Show debug info", value=False)
-    if st.button("Check DB connection"):
+    # Button trên
+    if st.button("Check DB", use_container_width=True):
         try:
             db = get_db(db_path)
             st.success("Connected. Tables:")
             st.code(db.get_usable_table_names(), language="bash")
         except Exception as e:
             st.error(f"DB error: {e}")
+    
+    # Button dưới
+    if st.button("🔄 Rebuild RAG Index", use_container_width=True):
+        try:
+            from rag.rag_agent import get_rag_agent
+            rag_agent = get_rag_agent()
+            result = rag_agent.build_index_from_examples(examples_path, force_rebuild=True)
+            if result["success"]:
+                st.success(f"✅ Rebuilt RAG index: {result['indexed_count']} examples")
+            else:
+                st.error(f"❌ Failed: {result['error']}")
+        except Exception as e:
+            st.error(f"❌ Error: {str(e)}")
 
 # Tabs: Text-to-SQL and SQL Console
 # Keeping a single chat-like flow in Text-to-SQL and show charts under results.
@@ -109,7 +123,7 @@ with tab_text2sql:
                 result = orchestrator.run_agent(
                     user_question=question,
                     db_path=db_path,
-                    use_retriever=use_retriever,
+                    use_retriever=use_semantic_search,
                     examples_path=examples_path,
                     top_k=top_k
                 )

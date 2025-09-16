@@ -19,6 +19,11 @@ inventory.db
 *.sqlite
 *.sqlite3
 
+# ChromaDB vector storage
+data/chroma_db/
+chroma_db/
+*.chroma
+
 # OS / Editor
 .DS_Store
 Thumbs.db

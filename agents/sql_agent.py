@@ -91,7 +91,45 @@ def extract_select_sql(text: str) -> str | None:
     return None
 
 
-def build_fewshot_block_from_examples(examples_path: str, question: str, top_k: int = 1) -> Tuple[str, Dict[str, object]]:
+def build_fewshot_block_from_examples(examples_path: str, question: str, top_k: int = 1, use_semantic_search: bool = True) -> Tuple[str, Dict[str, object]]:
+    """
+    Build few-shot examples block with optional semantic search
+    
+    Args:
+        examples_path: Path to examples.jsonl file
+        question: User question
+        top_k: Number of examples to retrieve
+        use_semantic_search: Whether to use ChromaDB semantic search
+        
+    Returns:
+        Tuple of (fewshot_text, metadata)
+    """
+    if use_semantic_search:
+        try:
+            from rag.rag_agent import get_rag_agent
+            rag_agent = get_rag_agent()
+            
+            # Check if collection has data
+            stats = rag_agent.get_collection_stats()
+            if stats.get("total_examples", 0) == 0:
+                print("🔄 ChromaDB collection is empty, building index...")
+                result = rag_agent.build_index_from_examples(examples_path)
+                if not result["success"]:
+                    print(f"❌ Failed to build index: {result['error']}")
+                    return _fallback_simple_retrieval(examples_path, question, top_k)
+            
+            # Use semantic search
+            return rag_agent.build_fewshot_prompt(question, top_k)
+            
+        except Exception as e:
+            print(f"⚠️ Semantic search failed, falling back to simple retrieval: {str(e)}")
+            return _fallback_simple_retrieval(examples_path, question, top_k)
+    else:
+        return _fallback_simple_retrieval(examples_path, question, top_k)
+
+
+def _fallback_simple_retrieval(examples_path: str, question: str, top_k: int) -> Tuple[str, Dict[str, object]]:
+    """Fallback to simple sequential retrieval"""
     selected: List[Dict[str, str]] = []
     if os.path.exists(examples_path):
         with open(examples_path, "r", encoding="utf-8") as f:
@@ -105,7 +143,10 @@ def build_fewshot_block_from_examples(examples_path: str, question: str, top_k: 
     
     selected = selected[:top_k]
     parts = [f"Question: {ex['question']}\n```sql\n{ex['sql']}\n```" for ex in selected]
-    return ("\n\n".join(parts), {"selected_examples": [ex["question"] for ex in selected]})
+    return ("\n\n".join(parts), {
+        "selected_examples": [ex["question"] for ex in selected],
+        "retrieval_method": "simple_sequential"
+    })
 
 
 @traceable(name="sql.generate")
@@ -115,6 +156,7 @@ def generate_sql(
     model: str = "openai/gpt-oss-20b",
     examples_path: str = "examples.jsonl",
     top_k: int = 1,
+    use_semantic_search: bool = True,
     return_debug: bool = False,
 ) -> Union[str, Tuple[str, Dict[str, object]]]:
     # Schema questions are now handled by Intent Agent + Orchestrator
@@ -122,7 +164,9 @@ def generate_sql(
     
     llm = ChatGroq(model=model, temperature=0.1)
 
-    fewshot_text, meta = build_fewshot_block_from_examples(examples_path, question, top_k=top_k)
+    fewshot_text, meta = build_fewshot_block_from_examples(
+        examples_path, question, top_k=top_k, use_semantic_search=use_semantic_search
+    )
 
     # Get database schema from YAML metadata for better SQL generation
     schema_context = load_metadata_yaml()

@@ -91,7 +91,8 @@ class OrchestratorAgent:
                 db=db,
                 model="openai/gpt-oss-20b",
                 examples_path=examples_path,
-                top_k=top_k
+                top_k=top_k,
+                use_semantic_search=use_retriever
             )
             t_sql1 = time.perf_counter()
             (debug_base or {}).get("steps", []).append({
@@ -174,7 +175,8 @@ class OrchestratorAgent:
                 db=db,
                 model="openai/gpt-oss-20b",
                 examples_path=examples_path,
-                top_k=top_k
+                top_k=top_k,
+                use_semantic_search=use_retriever
             )
             t_sql1 = time.perf_counter()
             (debug_base or {}).get("steps", []).append({
