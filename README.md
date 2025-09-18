@@ -40,7 +40,7 @@ SQL_AGENT/
 │   ├── report_agent.py       # Business report generation
 │   └── response_agent.py     # Natural language responses
 ├── rag/                      # RAG system with ChromaDB
-│   ├── rag_agent.py          # ChromaDB-based semantic search
+│   ├── rag_retriever.py      # ChromaDB-based semantic retriever (RAGRetriever)
 │   ├── initialize_rag.py     # RAG initialization script
 │   ├── rebuild_rag.py        # RAG rebuild script
 │   └── demo_rag_comparison.py # RAG comparison demo
@@ -153,7 +153,7 @@ streamlit run app.py
 
 ### **SQL Agent**
 - Generates accurate SQLite queries from natural language
-- **Advanced RAG**: ChromaDB-based semantic search for relevant examples
+- **Advanced RAG**: ChromaDB-based semantic search via `RAGRetriever` for relevant examples
 - **Semantic Similarity**: Finds most relevant examples based on question meaning
 - Schema-aware with YAML metadata integration
 - Automatic retry mechanism for failed queries

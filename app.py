@@ -72,8 +72,8 @@ with st.sidebar:
     # Button dưới
     if st.button("🔄 Rebuild RAG Index", use_container_width=True):
         try:
-            from rag.rag_agent import get_rag_agent
-            rag_agent = get_rag_agent()
+            from rag.rag_retriever import get_rag_retriever
+            rag_agent = get_rag_retriever()
             result = rag_agent.build_index_from_examples(examples_path, force_rebuild=True)
             if result["success"]:
                 st.success(f"✅ Rebuilt RAG index: {result['indexed_count']} examples")

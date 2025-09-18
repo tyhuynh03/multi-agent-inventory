@@ -12,7 +12,7 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from rag.rag_agent import get_rag_agent
+from rag.rag_retriever import get_rag_retriever
 
 
 def main():
@@ -27,10 +27,10 @@ def main():
     
     try:
         # Get RAG agent
-        rag_agent = get_rag_agent()
+        retriever = get_rag_retriever()
         
         # Force rebuild
-        result = rag_agent.build_index_from_examples(examples_path, force_rebuild=True)
+        result = retriever.build_index_from_examples(examples_path, force_rebuild=True)
         
         if result["success"]:
             print(f"✅ RAG index rebuilt successfully!")
@@ -39,7 +39,7 @@ def main():
             print(f"🤖 Model: {result['model_name']}")
             
             # Show collection stats
-            stats = rag_agent.get_collection_stats()
+            stats = retriever.get_collection_stats()
             print(f"\n📈 Collection Statistics:")
             print(f"   Total examples: {stats['total_examples']}")
             print(f"   Persist directory: {stats['persist_directory']}")
@@ -58,8 +58,8 @@ def show_current_stats():
     """Show current RAG statistics"""
     print("\n📊 Current RAG Statistics:")
     try:
-        rag_agent = get_rag_agent()
-        stats = rag_agent.get_collection_stats()
+        retriever = get_rag_retriever()
+        stats = retriever.get_collection_stats()
         
         if "error" in stats:
             print(f"   ❌ {stats['error']}")

@@ -12,7 +12,7 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from rag.rag_agent import initialize_rag_system, get_rag_agent
+from rag.rag_retriever import initialize_rag_system, get_rag_retriever
 
 
 def main():
@@ -37,8 +37,8 @@ def main():
             print(f"🤖 Model: {result['model_name']}")
             
             # Show collection stats
-            rag_agent = get_rag_agent()
-            stats = rag_agent.get_collection_stats()
+            retriever = get_rag_retriever()
+            stats = retriever.get_collection_stats()
             print(f"\n📈 Collection Statistics:")
             print(f"   Total examples: {stats['total_examples']}")
             print(f"   Persist directory: {stats['persist_directory']}")
@@ -58,7 +58,8 @@ def test_semantic_search():
     print("\n🔍 Testing semantic search...")
     
     try:
-        rag_agent = get_rag_agent()
+        from rag.rag_retriever import get_rag_retriever
+        rag_agent = get_rag_retriever()
         
         # Test queries
         test_queries = [

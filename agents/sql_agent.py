@@ -106,8 +106,8 @@ def build_fewshot_block_from_examples(examples_path: str, question: str, top_k: 
     """
     if use_semantic_search:
         try:
-            from rag.rag_agent import get_rag_agent
-            rag_agent = get_rag_agent()
+            from rag.rag_retriever import get_rag_retriever
+            rag_agent = get_rag_retriever()
             
             # Check if collection has data
             stats = rag_agent.get_collection_stats()
