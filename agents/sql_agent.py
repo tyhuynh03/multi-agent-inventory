@@ -6,6 +6,7 @@ from langchain_groq import ChatGroq
 from langchain_community.utilities import SQLDatabase
 
 from utils.logger import traceable
+from db.connection import get_db, run_sql_unified
 
 import json
 import re
@@ -178,7 +179,7 @@ def generate_sql(
         prompt = template.replace("{fewshot}", fewshot_text).replace("{question}", question)
     else:
         prompt = (
-            "You are a SQL assistant for a SQLite database. "
+            "You are a SQL assistant for a PostgreSQL database. "
             "Return exactly one SELECT statement only, enclosed in a ```sql``` block, with no explanations. "
             "Use accurate table/column names from the schema. Avoid destructive queries. "
             "Do NOT include LIMIT unless the user explicitly asks for it.\n" + fewshot_text + "\n" 
@@ -201,7 +202,7 @@ def generate_sql(
     if not sql:
         debug["retry"] = True
         retry_prompt = (
-            "Output ONLY one SQLite-compatible SELECT statement. No backticks, no explanations. "
+            "Output ONLY one PostgreSQL-compatible SELECT statement. No backticks, no explanations. "
             "Do NOT include LIMIT unless explicitly requested.\n"
             f"User question: {question}"
         )

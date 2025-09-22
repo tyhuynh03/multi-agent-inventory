@@ -1,303 +1,251 @@
 # 🤖 Multi-Agent Inventory Management System
 
-A sophisticated **Text-to-SQL + Visualization** system built with **LangChain** and **Groq LLM**. This multi-agent architecture provides intelligent inventory analysis through natural language queries, automatic chart generation, and comprehensive reporting capabilities.
+Hệ thống quản lý kho hàng thông minh sử dụng Multi-Agent AI với PostgreSQL, LangChain và Groq.
 
-## ✨ Key Features
+## 🚀 Tính năng chính
 
-### 🧠 **Intelligent Multi-Agent Architecture**
-- **Intent Classification Agent**: Automatically detects user intent (query, visualize, report, schema)
-- **SQL Agent**: Generates accurate SQL queries from natural language using RAG few-shot learning
-- **Visualization Agent**: Creates interactive charts (Plotly/Matplotlib) with intelligent chart type selection
-- **Report Agent**: Generates structured business reports (low stock, top products, category analysis)
-- **Response Agent**: Provides natural language summaries of query results
-- **Orchestrator Agent**: Coordinates workflow between all agents
+- **🧠 Multi-Agent AI**: Intent Classification, SQL Generation, Query Execution, Response Generation
+- **🗄️ PostgreSQL Database**: Lưu trữ dữ liệu kho hàng với 4 bảng chính
+- **💬 Natural Language Interface**: Hỏi đáp bằng tiếng Anh tự nhiên
+- **📊 Data Visualization**: Biểu đồ và báo cáo tự động
+- **🔍 Semantic Search**: Tìm kiếm thông minh với RAG (Retrieval-Augmented Generation)
+- **🖥️ Streamlit Web Interface**: Giao diện web thân thiện
 
-### 🔍 **Advanced Capabilities**
-- **Advanced RAG with ChromaDB**: Semantic search using vector embeddings for intelligent example retrieval
-- **Semantic Similarity**: Finds most relevant SQL examples based on question meaning, not just keywords
-- **Auto-Visualization**: Intelligent chart type selection (line charts for time series, bar charts for categories)
-- **Schema-Aware**: Uses YAML metadata for enhanced SQL generation accuracy
-- **LangSmith Tracing**: Optional observability and debugging support
-- **Safety-First**: SELECT-only queries to prevent data corruption
-- **Fallback System**: Graceful degradation to simple retrieval if semantic search fails
+## 📊 Cấu trúc dữ liệu
 
-### 📊 **Business Intelligence**
-- **Inventory Analysis**: Stock levels, sales performance, demand forecasting
-- **Category Performance**: Product category breakdowns and comparisons
-- **Low Stock Alerts**: Automated identification of products needing restocking
-- **Revenue Analysis**: Sales performance and product profitability insights
-- **Overstock Detection**: Identification of excess inventory
+### Bảng warehouses
+- `warehouse_code`: Mã kho hàng
+- `city`, `province`, `country`: Địa chỉ
+- `latitude`, `longitude`: Tọa độ địa lý
 
-## 🏗️ Project Architecture
+### Bảng skus
+- `sku_id`: Mã sản phẩm
+- `sku_name`: Tên sản phẩm
 
-```
-SQL_AGENT/
-├── agents/                    # Multi-agent system
-│   ├── orchestrator.py       # Main workflow coordinator
-│   ├── intent_agent.py       # Intent classification
-│   ├── sql_agent.py          # SQL generation with RAG
-│   ├── viz_agent.py          # Chart planning & rendering
-│   ├── report_agent.py       # Business report generation
-│   └── response_agent.py     # Natural language responses
-├── rag/                      # RAG system with ChromaDB
-│   ├── rag_retriever.py      # ChromaDB-based semantic retriever (RAGRetriever)
-│   ├── initialize_rag.py     # RAG initialization script
-│   ├── rebuild_rag.py        # RAG rebuild script
-│   └── demo_rag_comparison.py # RAG comparison demo
-├── configs/
-│   └── settings.py           # Configuration management
-├── db/
-│   └── connection.py         # SQLite database operations
-├── data/
-│   ├── inventory.db          # SQLite database
-│   ├── examples.jsonl        # RAG few-shot examples
-│   ├── metadata_db.yml       # Database schema metadata
-│   ├── chroma_db/            # ChromaDB vector storage (auto-generated, gitignored)
-│   └── retail_store_inventory.csv
-├── prompts/
-│   └── sql_prompt.txt        # SQL generation template
-├── utils/
-│   └── logger.py             # Logging and tracing utilities
-└── app.py                    # Streamlit web interface
-```
+### Bảng inventory
+- `sku_id`, `warehouse_id`: Liên kết với bảng khác
+- `vendor_name`: Nhà cung cấp
+- `current_inventory_quantity`: Số lượng tồn kho
+- `cost_per_sku`, `unit_price`: Giá thành và giá bán
+- `total_value`: Tổng giá trị
+- `average_lead_time_days`: Thời gian giao hàng trung bình
 
-## 🚀 Quick Start
+### Bảng sales
+- `order_number`: Số đơn hàng
+- `order_date`: Ngày đặt hàng
+- `sku_id`, `warehouse_id`: Liên kết
+- `customer_type`: Loại khách hàng (Export, Wholesale, Distributor)
+- `order_quantity`: Số lượng đặt
+- `unit_sale_price`, `revenue`: Giá bán và doanh thu
 
-### 1. **Environment Setup**
+## 🛠️ Cài đặt
+
+### 1. Clone repository
 ```bash
-# Clone the repository
 git clone <repository-url>
-cd SQL_AGENT
+cd "Multi-agent system inventory"
+```
 
-# Create virtual environment
+### 2. Tạo virtual environment
+```bash
 python -m venv .venv
 .venv\Scripts\activate  # Windows
 # source .venv/bin/activate  # Linux/Mac
+```
 
-# Install dependencies
+### 3. Cài đặt dependencies
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. **Database Setup**
-```bash
-# Load CSV data into SQLite
-python load_csv_to_sqlite.py data/retail_store_inventory.csv --db data/inventory.db --table inventory
-```
-
-### 3. **API Configuration**
-Create a `.env` file in the project root:
+### 4. Tạo file .env
+Tạo file `.env` với nội dung:
 ```env
-GROQ_API_KEY=your_groq_api_key_here
-# Optional: LangSmith tracing
-LANGSMITH_TRACING=true
-LANGSMITH_API_KEY=lsm_...
-LANGSMITH_PROJECT=inventory-text-to-sql
+# Groq API Key - Get from https://console.groq.com/keys
+GROQ_API_KEY=your_actual_groq_api_key_here
+
+# Database settings
+DEFAULT_DB_PATH=data/inventory.db
+DEFAULT_MODEL=llama-3.1-70b-versatile
+DEFAULT_EXAMPLES_PATH=data/examples.jsonl
+RAG_TOP_K=3
 ```
 
-### 4. **Initialize RAG System** (Optional but Recommended)
+**Lấy GROQ_API_KEY:**
+1. Truy cập: https://console.groq.com/keys
+2. Đăng ký/Đăng nhập tài khoản
+3. Tạo API key mới
+4. Copy và thay thế `your_actual_groq_api_key_here`
+
+## 🐳 Chạy hệ thống
+
+### 1. Khởi động PostgreSQL
 ```bash
-# Initialize ChromaDB with semantic search
-python rag/initialize_rag.py
+# Sử dụng Docker Compose
+docker-compose up -d postgres
+
+# Hoặc chạy script
+start_postgres.bat
 ```
 
-### 5. **Launch Application**
+### 2. Kiểm tra PostgreSQL
 ```bash
-streamlit run app.py
+# Kiểm tra container
+docker ps
+
+# Kết nối database
+docker exec -it inventory_postgres psql -U inventory_user -d inventory_db
 ```
 
-## 💡 Usage Examples
-
-### **Natural Language Queries**
-```
-"What are the top 5 selling products this month?"
-"Show me inventory levels for electronics category"
-"Which products have low stock (less than 10 units)?"
-"Generate a trend analysis for store S001 from January to March"
+### 3. Load dữ liệu (nếu chưa có)
+```bash
+python migrate_to_postgres.py
 ```
 
-### **Visualization Requests**
-```
-"Create a chart showing sales trends over time"
-"Visualize inventory levels by category"
-"Show me a bar chart of top performing products"
+### 4. Chạy Streamlit app
+```bash
+python -m streamlit run app.py
 ```
 
-### **Business Reports**
+Truy cập: http://localhost:8501
+
+## 🎯 Sử dụng
+
+### Text-to-SQL Chat
+Hỏi bằng tiếng Anh tự nhiên:
+- "How many warehouses are there?"
+- "What are the top 5 products by revenue?"
+- "Which warehouse has the most inventory?"
+- "Show sales by customer type"
+- "What is the total inventory value?"
+
+### SQL Console
+Chạy SQL trực tiếp:
+```sql
+SELECT COUNT(*) FROM warehouses;
+SELECT city, province FROM warehouses;
+SELECT sku_name, current_inventory_quantity FROM inventory_summary LIMIT 10;
 ```
-"Generate a low stock report for products below 15 units"
-"Create a category performance summary"
-"Show me inventory valuation by category"
-"Generate an overstock alert for items above 100 units"
+
+### Database Connection Test
+Click "Check DB" trong sidebar để kiểm tra kết nối.
+
+## 🔧 Cấu hình
+
+### Database Settings
+- **Host**: localhost:5432
+- **Database**: inventory_db
+- **User**: inventory_user
+- **Password**: inventory_pass
+
+### Model Settings
+- **Default Model**: llama-3.1-70b-versatile
+- **Temperature**: 0.1 (cho consistency)
+- **Top-k**: 3 (số examples retrieved)
+
+## 📁 Cấu trúc project
+
+```
+📁 Multi-agent system inventory/
+├── 🐳 docker-compose.yml          # PostgreSQL setup
+├── 🗄️ init.sql                    # Database schema
+├── 📊 migrate_to_postgres.py      # Data migration
+├── 🤖 agents/                     # AI agents
+│   ├── intent_agent.py           # Intent classification
+│   ├── sql_agent.py              # SQL generation
+│   ├── orchestrator.py           # Workflow coordination
+│   ├── viz_agent.py              # Visualization
+│   ├── report_agent.py           # Report generation
+│   └── response_agent.py         # Response formatting
+├── 📊 data/                       # Data files
+│   ├── warehouse.csv             # Warehouse data
+│   ├── sku.csv                   # Product data
+│   ├── inventory.csv             # Inventory data
+│   ├── sales.csv                 # Sales data
+│   ├── examples.jsonl            # Example Q&A pairs
+│   └── metadata_db.yml           # Database metadata
+├── 🔗 db/connection.py            # Database connections
+├── 🧠 rag/                        # RAG system
+├── ⚙️ configs/settings.py         # Configuration
+├── 🛠️ utils/logger.py            # Logging utilities
+└── 🖥️ app.py                      # Streamlit interface
 ```
 
-## 🔧 Configuration Options
+## 🚨 Troubleshooting
 
-### **Environment Variables**
-- `INV_DB_PATH`: Database file path (default: `data/inventory.db`)
-- `INV_MODEL`: Groq model name (default: `openai/gpt-oss-20b`)
-- `INV_EXAMPLES_PATH`: RAG examples file (default: `data/examples.jsonl`)
-- `INV_RAG_TOP_K`: Number of examples to retrieve (default: `2`)
-- `INV_USE_SEMANTIC_SEARCH`: Enable ChromaDB semantic search (default: `true`)
-- `INV_RAG_SIMILARITY_THRESHOLD`: Minimum similarity score (default: `0.3`)
-- `INV_RAG_EMBEDDING_MODEL`: Sentence transformer model (default: `all-MiniLM-L6-v2`)
-- `INV_CHROMA_PERSIST_DIR`: ChromaDB storage directory (default: `data/chroma_db`)
-- `GROQ_API_KEY`: Your Groq API key
+### PostgreSQL không kết nối được
+```bash
+# Kiểm tra container
+docker ps
 
-### **Supported Models**
-- `openai/gpt-oss-20b` (default)
-- `google/gemma-3-12b-it`
-- `deepseek/deepseek-chat`
-- Other Groq-compatible models
+# Restart container
+docker-compose restart postgres
 
-## 📈 Agent Capabilities
+# Xem logs
+docker logs inventory_postgres
+```
 
-### **SQL Agent**
-- Generates accurate SQLite queries from natural language
-- **Advanced RAG**: ChromaDB-based semantic search via `RAGRetriever` for relevant examples
-- **Semantic Similarity**: Finds most relevant examples based on question meaning
-- Schema-aware with YAML metadata integration
-- Automatic retry mechanism for failed queries
-- Fallback to simple retrieval if semantic search fails
+### GROQ API Key lỗi
+- Kiểm tra file `.env` có đúng format
+- Verify API key tại https://console.groq.com/keys
+- Restart Streamlit app
 
-### **Visualization Agent**
-- Intelligent chart type selection (line, bar)
-- Automatic data aggregation and grouping
-- Interactive Plotly charts with fallback to Matplotlib
-- Time series detection and proper date handling
+### Lỗi pandas warning
+- Đã được sửa bằng SQLAlchemy
+- Nếu vẫn có warning, restart app
 
-### **Report Agent**
-- **Low Stock Reports**: Products below threshold
-- **Top Products**: Best selling items by revenue/units
-- **Category Summary**: Performance by product category
-- **Inventory Valuation**: Total value by category
-- **Overstock Alerts**: Products with excess inventory
+### RAG system lỗi
+- Tạm thời disable semantic search trong sidebar
+- Sẽ sửa trong version tiếp theo
 
-### **Intent Classification**
-- **Query**: Standard SQL queries
-- **Visualize**: Chart generation requests
-- **Report**: Business report generation
-- **Schema**: Database structure information
-
-## 🛡️ Safety Features
-
-- **SELECT-only queries**: Prevents data modification
-- **Input validation**: Sanitizes user inputs
-- **Error handling**: Graceful failure with informative messages
-- **SQL injection protection**: Parameterized queries
-
-## 🧠 Advanced RAG System
-
-### **ChromaDB Integration**
-The system now uses ChromaDB for advanced semantic search capabilities:
+## 🔄 Dừng hệ thống
 
 ```bash
-# Initialize RAG system
-python rag/initialize_rag.py
+# Dừng Streamlit (Ctrl+C trong terminal)
 
-# Compare old vs new RAG systems
-python rag/demo_rag_comparison.py
+# Dừng PostgreSQL
+docker-compose down
 
-# Rebuild RAG index
-python rag/rebuild_rag.py
+# Hoặc chạy script
+stop_postgres.bat
 ```
 
-### **RAG Features**
-- **Semantic Search**: Uses sentence transformers to find semantically similar examples
-- **Vector Embeddings**: Converts questions and examples to high-dimensional vectors
-- **Similarity Scoring**: Configurable similarity thresholds for relevance filtering
-- **Persistent Storage**: ChromaDB stores embeddings for fast retrieval
-- **Fallback System**: Graceful degradation to simple retrieval if needed
+## 📈 Performance
 
-### **RAG Configuration**
-```env
-# Enable/disable semantic search
-INV_USE_SEMANTIC_SEARCH=true
+- **Database**: PostgreSQL với indexes tối ưu
+- **AI Model**: Groq Llama 3.1 70B (nhanh)
+- **Caching**: Streamlit cache cho orchestrator
+- **Connection Pooling**: SQLAlchemy engine
 
-# Similarity threshold (0.0 to 1.0)
-INV_RAG_SIMILARITY_THRESHOLD=0.3
+## 🎯 Ví dụ câu hỏi
 
-# Embedding model
-INV_RAG_EMBEDDING_MODEL=all-MiniLM-L6-v2
+### Đơn giản
+- "How many warehouses are there?" → 4
+- "List all cities with warehouses" → Regina, Saskatoon, Montreal, Quebec City
+- "What is the total inventory value?" → $X,XXX,XXX
 
-# ChromaDB storage location
-INV_CHROMA_PERSIST_DIR=data/chroma_db
-```
-
-## 🔍 Monitoring & Debugging
-
-### **LangSmith Integration** (Optional)
-```env
-LANGSMITH_TRACING=true
-LANGSMITH_API_KEY=your_api_key
-LANGSMITH_PROJECT=inventory-text-to-sql
-```
-
-### **Debug Mode**
-Enable debug information in the Streamlit interface to see:
-- Intent classification results
-- SQL generation process
-- Chart planning specifications
-- Performance timing metrics
-
-## 📊 Sample Data Schema
-
-The system works with retail inventory data including:
-- **Date**: Transaction date
-- **Store ID**: Store identifier
-- **Product ID**: Product identifier
-- **Category**: Product category
-- **Region**: Geographic region
-- **Inventory Level**: Current stock quantity
-- **Units Sold**: Sales volume
-- **Units Ordered**: Purchase orders
-- **Demand Forecast**: Predicted demand
-- **Price**: Product price
-- **Discount**: Applied discounts
-- **Weather Condition**: Environmental factors
-- **Holiday/Promotion**: Special events
-- **Competitor Pricing**: Market pricing
-- **Seasonality**: Seasonal patterns
-
-## 🚧 Roadmap
-
-### **Short Term**
-- [ ] Enhanced SQL validation and auto-repair
-- [ ] Advanced intent classification with skill registry
-- [ ] Comprehensive test suite (pytest)
-- [ ] Docker containerization
-
-### **Medium Term**
-- [ ] Multi-database support (PostgreSQL, MySQL)
-- [ ] Advanced visualization types (heatmaps, scatter plots)
-- [ ] Custom report templates
-- [ ] API endpoints for integration
-
-### **Long Term**
-- [ ] Real-time data streaming
-- [ ] Machine learning predictions
-- [ ] Multi-language support
-- [ ] Enterprise features (RBAC, audit logs)
+### Phức tạp
+- "Show top 5 products by revenue in the last quarter"
+- "Which warehouse has the highest inventory turnover?"
+- "Compare sales performance between customer types"
+- "Find products with low stock levels"
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Fork repository
+2. Tạo feature branch
+3. Commit changes
+4. Push to branch
+5. Tạo Pull Request
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT License - xem file LICENSE để biết thêm chi tiết.
 
-## 🙏 Acknowledgments
+## 📞 Support
 
-- **LangChain** for the agent framework
-- **Groq** for high-performance LLM inference
-- **Streamlit** for the web interface
-- **Plotly** for interactive visualizations
-- **SQLAlchemy** for database operations
+Nếu gặp vấn đề, tạo issue trên GitHub hoặc liên hệ qua email.
 
 ---
 
-**Built with ❤️ for intelligent inventory management**
+**🎉 Chúc bạn sử dụng hệ thống hiệu quả!**

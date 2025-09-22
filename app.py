@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 from agents.orchestrator import OrchestratorAgent
 # from agents.viz_agent import render_auto_chart  # Removed - no longer needed
-from db.connection import get_db, run_sql, run_sqlite
+from db.connection import get_db, run_sql_unified
 from configs.settings import DEFAULT_DB_PATH, DEFAULT_MODEL, DEFAULT_EXAMPLES_PATH, RAG_TOP_K
 
 # NEW: plotting for auto-visualize
@@ -45,7 +45,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🤖 Multi-Agent for Inventory (SQLite + LangChain, Groq)")
+st.title("🤖 Multi-Agent for Inventory (PostgreSQL + LangChain, Groq)")
 
 # --- Initialize Orchestrator ---
 @st.cache_resource
@@ -54,7 +54,11 @@ def get_orchestrator():
 
 with st.sidebar:
     st.header("Settings")
-    db_path = st.text_input("SQLite path", value=DEFAULT_DB_PATH)
+    db_type = st.selectbox("Database Type", ["postgresql", "sqlite"], index=0)
+    if db_type == "sqlite":
+        db_path = st.text_input("SQLite path", value=DEFAULT_DB_PATH)
+    else:
+        st.info("Using PostgreSQL: localhost:5432/inventory_db")
     model = st.text_input("Groq model", value=DEFAULT_MODEL)
     use_semantic_search = st.checkbox("Use semantic search (ChromaDB)", value=True)
     examples_path = st.text_input("Examples JSONL path", value=DEFAULT_EXAMPLES_PATH)
@@ -63,9 +67,21 @@ with st.sidebar:
     # Button trên
     if st.button("Check DB", use_container_width=True):
         try:
-            db = get_db(db_path)
-            st.success("Connected. Tables:")
-            st.code(db.get_usable_table_names(), language="bash")
+            if db_type == "postgresql":
+                # Test PostgreSQL connection
+                df, error = run_sql_unified("SELECT COUNT(*) as table_count FROM information_schema.tables WHERE table_schema = 'public'", "postgresql")
+                if error:
+                    st.error(f"PostgreSQL error: {error}")
+                else:
+                    st.success("✅ PostgreSQL Connected!")
+                    # Get table names
+                    df_tables, _ = run_sql_unified("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name", "postgresql")
+                    st.write("Tables:")
+                    st.code(df_tables['table_name'].tolist(), language="bash")
+            else:
+                db = get_db(db_path, "sqlite")
+                st.success("✅ SQLite Connected. Tables:")
+                st.code(db.get_usable_table_names(), language="bash")
         except Exception as e:
             st.error(f"DB error: {e}")
     
@@ -87,7 +103,7 @@ with st.sidebar:
 tab_text2sql, tab_sql_console = st.tabs(["Text-to-SQL", "SQL Console"]) 
 
 with tab_text2sql:
-    st.write("Enter your question in English. The app will generate a `SELECT` query and run it on SQLite.")
+    st.write("Enter your question in English. The app will generate a `SELECT` query and run it on PostgreSQL.")
     
     # Clear chat button
     if st.button("🗑️ Clear Chat History"):
@@ -122,7 +138,7 @@ with tab_text2sql:
                 orchestrator = get_orchestrator()
                 result = orchestrator.run_agent(
                     user_question=question,
-                    db_path=db_path,
+                    db_type="postgresql",
                     use_retriever=use_semantic_search,
                     examples_path=examples_path,
                     top_k=top_k
@@ -214,8 +230,8 @@ with tab_text2sql:
                 st.error(f"❌ Error: {str(e)}")
 
 with tab_sql_console:
-    st.write("Run your own SQL (SELECT-only) against SQLite.")
-    sql_text = st.text_area("SQL", height=160, placeholder='SELECT "Product ID", "Inventory Level" FROM inventory LIMIT 10')
+    st.write("Run your own SQL (SELECT-only) against PostgreSQL.")
+    sql_text = st.text_area("SQL", height=160, placeholder='SELECT sku_id, current_inventory_quantity FROM inventory LIMIT 10')
     colc1, colc2 = st.columns([1, 3])
     with colc1:
         run_sql_btn = st.button("Run SQL")
@@ -229,10 +245,9 @@ with tab_sql_console:
             st.error("Only SELECT statements are allowed for safety.")
         else:
             try:
-                db = get_db(db_path)
-                df, err = run_sql(db, sql_text)
-                if err and "engine is not available" in err:
-                    df, err = run_sqlite(db_path, sql_text)
+                # Use the selected database type
+                current_db_type = db_type if 'db_type' in locals() else "postgresql"
+                df, err = run_sql_unified(sql_text, current_db_type)
                 if err:
                     st.error(err)
                 else:

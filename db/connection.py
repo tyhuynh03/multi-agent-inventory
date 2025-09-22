@@ -1,21 +1,43 @@
 import os
 import sqlite3
 import pandas as pd
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 from langchain_community.utilities import SQLDatabase
 
 from utils.logger import traceable
 
 
-def get_sqlalchemy_url(sqlite_path: str) -> str:
-	abs_path = os.path.abspath(sqlite_path)
-	return f"sqlite:///{abs_path}"
+def get_sqlalchemy_url(db_path: str, db_type: str = "sqlite") -> str:
+	"""Tạo SQLAlchemy URL cho SQLite hoặc PostgreSQL"""
+	if db_type.lower() == "postgresql":
+		return db_path  # db_path đã là connection string
+	else:
+		abs_path = os.path.abspath(db_path)
+		return f"sqlite:///{abs_path}"
 
 
-def get_db(sqlite_path: str) -> SQLDatabase:
-	url = get_sqlalchemy_url(sqlite_path)
+def get_db(db_path: str, db_type: str = "sqlite") -> SQLDatabase:
+	"""Tạo SQLDatabase object cho SQLite hoặc PostgreSQL"""
+	url = get_sqlalchemy_url(db_path, db_type)
 	return SQLDatabase.from_uri(url)
+
+
+def get_postgres_connection():
+	"""Tạo kết nối trực tiếp đến PostgreSQL"""
+	try:
+		conn = psycopg2.connect(
+			host='localhost',
+			port=5432,
+			database='inventory_db',
+			user='inventory_user',
+			password='inventory_pass'
+		)
+		return conn
+	except Exception as e:
+		raise Exception(f"Không thể kết nối đến PostgreSQL: {e}")
 
 
 @traceable(name="sql.exec")
@@ -47,3 +69,27 @@ def run_sqlite(db_path: str, sql: str) -> Tuple[pd.DataFrame, Optional[str]]:
 			conn.close()
 	except Exception as e:
 		return pd.DataFrame(), str(e)
+
+
+@traceable(name="sql.exec.postgres")
+def run_postgres(sql: str) -> Tuple[pd.DataFrame, Optional[str]]:
+    """Chạy SQL query trên PostgreSQL database"""
+    if not sql.strip().lower().startswith("select"):
+        return pd.DataFrame(), "Only SELECT statements are allowed for safety."
+    
+    try:
+        # Sử dụng SQLAlchemy thay vì psycopg2 trực tiếp
+        from sqlalchemy import create_engine
+        engine = create_engine("postgresql://inventory_user:inventory_pass@localhost:5432/inventory_db")
+        df = pd.read_sql_query(sql, engine)
+        return df, None
+    except Exception as e:
+        return pd.DataFrame(), str(e)
+
+
+def run_sql_unified(sql: str, db_type: str = "postgresql") -> Tuple[pd.DataFrame, Optional[str]]:
+	"""Chạy SQL query trên database được chỉ định"""
+	if db_type.lower() == "postgresql":
+		return run_postgres(sql)
+	else:
+		return run_sqlite("data/inventory.db", sql)

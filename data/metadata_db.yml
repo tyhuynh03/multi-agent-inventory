@@ -1,50 +1,122 @@
-database_description: Retail store inventory management database
+database_description: "Multi-Agent Inventory Management System - PostgreSQL Database with warehouses, SKUs, inventory, and sales data"
+
 tables:
-  inventory:
-    description: Contains daily inventory data for retail stores including sales, orders, and forecasts
+  warehouses:
+    description: "Information about warehouse locations and their geographical details"
     columns:
-    - name: Date
-      type: TEXT
-      description: Date of the record in YYYY-MM-DD format (e.g., '2022-01-01')
-    - name: Store ID
-      type: TEXT
-      description: Unique identifier for each store (e.g., 'S001', 'S002')
-    - name: Product ID
-      type: TEXT
-      description: Unique identifier for each product (e.g., 'P0001', 'P0002')
-    - name: Category
-      type: TEXT
-      description: Product category (e.g., 'Electronics', 'Groceries', 'Toys')
-    - name: Region
-      type: TEXT
-      description: Geographic region where store is located (e.g., 'North', 'South', 'East', 'West')
-    - name: Inventory Level
-      type: INTEGER
-      description: Current stock quantity available in the store
-    - name: Units Sold
-      type: INTEGER
-      description: Number of units sold on this date
-    - name: Units Ordered
-      type: INTEGER
-      description: Number of units ordered/replenished on this date
-    - name: Demand Forecast
-      type: REAL
-      description: Predicted demand for this product on this date
-    - name: Price
-      type: REAL
-      description: Selling price per unit in USD
-    - name: Discount
-      type: INTEGER
-      description: Discount percentage applied (0-100)
-    - name: Weather Condition
-      type: TEXT
-      description: Weather condition on this date (e.g., 'Sunny', 'Rainy', 'Cloudy')
-    - name: Holiday/Promotion
-      type: INTEGER
-      description: Whether there was a holiday or promotion (1 = yes, 0 = no)
-    - name: Competitor Pricing
-      type: REAL
-      description: Average competitor price for similar products
-    - name: Seasonality
-      type: TEXT
-      description: Seasonal period (e.g., 'Summer', 'Autumn', 'Winter', 'Spring')
+      - name: "warehouse_code"
+        type: "VARCHAR(10)"
+        description: "Unique identifier for each warehouse"
+      - name: "city"
+        type: "VARCHAR(100)"
+        description: "City where the warehouse is located"
+      - name: "province"
+        type: "VARCHAR(100)"
+        description: "Province or state where the warehouse is located"
+      - name: "country"
+        type: "VARCHAR(100)"
+        description: "Country where the warehouse is located"
+      - name: "latitude"
+        type: "DECIMAL(10,8)"
+        description: "Geographical latitude coordinate of the warehouse"
+      - name: "longitude"
+        type: "DECIMAL(11,8)"
+        description: "Geographical longitude coordinate of the warehouse"
+      - name: "created_at"
+        type: "TIMESTAMP"
+        description: "Timestamp when the record was created"
+
+  skus:
+    description: "Product catalog with SKU information"
+    columns:
+      - name: "sku_id"
+        type: "VARCHAR(10)"
+        description: "Unique identifier for each product (Stock Keeping Unit)"
+      - name: "sku_name"
+        type: "VARCHAR(200)"
+        description: "Human-readable name of the product"
+      - name: "created_at"
+        type: "TIMESTAMP"
+        description: "Timestamp when the record was created"
+
+  inventory:
+    description: "Current inventory levels and product information across warehouses"
+    columns:
+      - name: "id"
+        type: "SERIAL"
+        description: "Auto-incrementing primary key"
+      - name: "sku_id"
+        type: "VARCHAR(10)"
+        description: "Foreign key reference to skus table"
+      - name: "vendor_name"
+        type: "VARCHAR(200)"
+        description: "Name of the vendor/supplier for this product"
+      - name: "warehouse_id"
+        type: "VARCHAR(10)"
+        description: "Foreign key reference to warehouses table"
+      - name: "current_inventory_quantity"
+        type: "DECIMAL(15,2)"
+        description: "Current stock quantity available in the warehouse"
+      - name: "cost_per_sku"
+        type: "DECIMAL(15,2)"
+        description: "Cost price per unit of the product"
+      - name: "total_value"
+        type: "DECIMAL(15,2)"
+        description: "Total inventory value (cost_per_sku * current_inventory_quantity)"
+      - name: "units"
+        type: "VARCHAR(20)"
+        description: "Unit of measurement (e.g., 'Kg', 'Nos')"
+      - name: "average_lead_time_days"
+        type: "INTEGER"
+        description: "Average number of days to restock this product"
+      - name: "maximum_lead_time_days"
+        type: "INTEGER"
+        description: "Maximum number of days to restock this product"
+      - name: "unit_price"
+        type: "DECIMAL(15,2)"
+        description: "Selling price per unit of the product"
+      - name: "created_at"
+        type: "TIMESTAMP"
+        description: "Timestamp when the record was created"
+
+  sales:
+    description: "Sales transactions and order history"
+    columns:
+      - name: "id"
+        type: "SERIAL"
+        description: "Auto-incrementing primary key"
+      - name: "order_number"
+        type: "VARCHAR(50)"
+        description: "Unique identifier for each sales order"
+      - name: "order_date"
+        type: "DATE"
+        description: "Date when the order was placed"
+      - name: "sku_id"
+        type: "VARCHAR(10)"
+        description: "Foreign key reference to skus table"
+      - name: "warehouse_id"
+        type: "VARCHAR(10)"
+        description: "Foreign key reference to warehouses table"
+      - name: "customer_type"
+        type: "VARCHAR(50)"
+        description: "Type of customer (e.g., 'Export', 'Wholesale', 'Distributor')"
+      - name: "order_quantity"
+        type: "DECIMAL(15,2)"
+        description: "Quantity of products ordered"
+      - name: "unit_sale_price"
+        type: "DECIMAL(15,2)"
+        description: "Price per unit at the time of sale"
+      - name: "revenue"
+        type: "DECIMAL(15,2)"
+        description: "Total revenue from this order (order_quantity * unit_sale_price)"
+      - name: "created_at"
+        type: "TIMESTAMP"
+        description: "Timestamp when the record was created"
+
+# Key relationships
+relationships:
+  - "warehouses.warehouse_code -> inventory.warehouse_id"
+  - "warehouses.warehouse_code -> sales.warehouse_id"
+  - "skus.sku_id -> inventory.sku_id"
+  - "skus.sku_id -> sales.sku_id"
+

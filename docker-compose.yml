@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: inventory_postgres
+    environment:
+      POSTGRES_DB: inventory_db
+      POSTGRES_USER: inventory_user
+      POSTGRES_PASSWORD: inventory_pass
+      POSTGRES_HOST_AUTH_METHOD: trust   # (không khuyến nghị trong môi trường thật)
+      TZ: Asia/Ho_Chi_Minh               # hệ điều hành container
+    command: ["postgres", "-c", "timezone=Asia/Ho_Chi_Minh"]  # <-- quan trọng
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inventory_user -d inventory_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
