@@ -42,7 +42,8 @@ def get_postgres_connection():
 
 @traceable(name="sql.exec")
 def run_sql(db: SQLDatabase, sql: str) -> Tuple[pd.DataFrame, Optional[str]]:
-	if not sql.strip().lower().startswith("select"):
+	first_token = sql.strip().lower()
+	if not (first_token.startswith("select") or first_token.startswith("with")):
 		return pd.DataFrame(), "Only SELECT statements are allowed for safety."
 	engine = getattr(db, "engine", None) or getattr(db, "_engine", None)
 	if engine is not None:
@@ -58,7 +59,8 @@ def run_sql(db: SQLDatabase, sql: str) -> Tuple[pd.DataFrame, Optional[str]]:
 
 @traceable(name="sql.exec.sqlite")
 def run_sqlite(db_path: str, sql: str) -> Tuple[pd.DataFrame, Optional[str]]:
-	if not sql.strip().lower().startswith("select"):
+	first_token = sql.strip().lower()
+	if not (first_token.startswith("select") or first_token.startswith("with")):
 		return pd.DataFrame(), "Only SELECT statements are allowed for safety."
 	try:
 		conn = sqlite3.connect(db_path)
@@ -74,7 +76,8 @@ def run_sqlite(db_path: str, sql: str) -> Tuple[pd.DataFrame, Optional[str]]:
 @traceable(name="sql.exec.postgres")
 def run_postgres(sql: str) -> Tuple[pd.DataFrame, Optional[str]]:
     """Chạy SQL query trên PostgreSQL database"""
-    if not sql.strip().lower().startswith("select"):
+    first_token = sql.strip().lower()
+    if not (first_token.startswith("select") or first_token.startswith("with")):
         return pd.DataFrame(), "Only SELECT statements are allowed for safety."
     
     try:

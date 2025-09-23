@@ -241,7 +241,7 @@ with tab_sql_console:
     if run_sql_btn:
         if not sql_text.strip():
             st.warning("Please enter a SQL query.")
-        elif not sql_text.strip().lower().startswith("select"):
+        elif not (sql_text.strip().lower().startswith("select") or sql_text.strip().lower().startswith("with")):
             st.error("Only SELECT statements are allowed for safety.")
         else:
             try:
