@@ -74,7 +74,7 @@ class OrchestratorAgent:
             )
         
         elif intent == "schema":
-            return self._handle_schema_intent(user_question, db_path)
+            return self._handle_schema_intent(user_question, db_type)
         
         else:
             # Fallback về query
@@ -272,7 +272,7 @@ class OrchestratorAgent:
             # Generate report
             result = self.report_agent.generate_report(
                 report_type=report_type,
-                db_path=db_path,
+                db_type=db_type,
                 params=params
             )
             
@@ -340,7 +340,7 @@ class OrchestratorAgent:
         
         return params
     
-    def _handle_schema_intent(self, user_question: str, db_path: str) -> dict:
+    def _handle_schema_intent(self, user_question: str, db_type: str) -> dict:
         """Handle schema intent - Database structure information"""
         try:
             from agents.sql_agent import get_schema_info

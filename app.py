@@ -1,6 +1,10 @@
 import os
+import time
+import json
+import pickle
 from html import escape
 import streamlit as st
+import streamlit.components.v1
 import pandas as pd
 from dotenv import load_dotenv
 
@@ -26,19 +30,235 @@ load_dotenv()
 
 st.set_page_config(page_title="Multi-Agent for Inventory", layout="wide")
 
+# Config flags
+LOAD_SAVED_CHARTS = False  # Tạm thời bỏ load chart từ conversation/segments
+
 # Initialize session state for chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+# Load conversation from file if exists
+def load_conversation():
+    """Load conversation from file"""
+    try:
+        if os.path.exists("data/conversation.json"):
+            with open("data/conversation.json", "r", encoding="utf-8") as f:
+                content = f.read()
+                if not content.strip():
+                    st.warning("Conversation file is empty")
+                    return False
+                
+                try:
+                    data = json.loads(content)
+                except json.JSONDecodeError as e:
+                    st.error(f"Invalid JSON format in conversation file: {e}")
+                    # Try to backup and reset
+                    backup_file = f"data/conversation_backup_{int(time.time())}.json"
+                    os.rename("data/conversation.json", backup_file)
+                    st.info(f"Backed up corrupted file to {backup_file}")
+                    return False
+                
+                st.session_state.messages = data.get("messages", [])
+
+                # Optionally skip loading saved charts
+                if LOAD_SAVED_CHARTS:
+                    charts = []
+                    for chart_data in data.get("charts", []):
+                        if "chart_png_base64" in chart_data:
+                            try:
+                                import base64
+                                png_bytes = base64.b64decode(chart_data["chart_png_base64"])
+                                charts.append({
+                                    "question": chart_data.get("question", ""),
+                                    "chart": None,
+                                    "chart_png": png_bytes,
+                                    "timestamp": chart_data.get("timestamp", time.time())
+                                })
+                            except Exception as e:
+                                st.warning(f"Could not load chart PNG: {e}")
+                                continue
+                    st.session_state.charts = charts
+                    st.success(f"✅ Loaded {len(charts)} charts from conversation")
+                else:
+                    st.session_state.charts = []
+                return True
+    except Exception as e:
+        st.error(f"Error loading conversation: {e}")
+        # Try to backup corrupted file
+        if os.path.exists("data/conversation.json"):
+            try:
+                backup_file = f"data/conversation_backup_{int(time.time())}.json"
+                os.rename("data/conversation.json", backup_file)
+                st.info(f"Backed up corrupted file to {backup_file}")
+            except:
+                pass
+    return False
+
+def save_conversation():
+    """Save conversation to file"""
+    try:
+        os.makedirs("data", exist_ok=True)
+        
+        # Convert charts to serializable format (PNG images)
+        serializable_charts = []
+        for chart_data in st.session_state.get("charts", []):
+            if chart_data and "chart_png" in chart_data:
+                try:
+                    import base64
+                    # Convert PNG bytes to base64 string for JSON storage
+                    if chart_data["chart_png"]:
+                        png_base64 = base64.b64encode(chart_data["chart_png"]).decode('utf-8')
+                        serializable_chart = {
+                            "question": chart_data.get("question", ""),
+                            "chart_png_base64": png_base64,
+                            "timestamp": chart_data.get("timestamp", time.time())
+                        }
+                        serializable_charts.append(serializable_chart)
+                except Exception as e:
+                    st.warning(f"Could not serialize chart PNG: {e}")
+                    continue
+        
+        data = {
+            "messages": st.session_state.messages,
+            "charts": serializable_charts,
+            "timestamp": time.time()
+        }
+        with open("data/conversation.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.error(f"Error saving conversation: {e}")
+
+# Load conversation on startup
+if not st.session_state.messages:
+    load_conversation()
+
+def save_chat_segment():
+    """Save current conversation as a named chat segment"""
+    try:
+        if not st.session_state.messages:
+            st.warning("No conversation to save")
+            return
+        
+        # Create segment data with default name
+        segment_name = f"Chat_{int(time.time())}"
+        segment_data = {
+            "name": segment_name,
+            "messages": st.session_state.messages,
+            "charts": st.session_state.get("charts", []),
+            "timestamp": time.time(),
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        # Save to file
+        os.makedirs("data/chat_segments", exist_ok=True)
+        filename = f"data/chat_segments/{segment_name}.json"
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(segment_data, f, ensure_ascii=False, indent=2)
+        
+        st.success(f"✅ Chat segment '{segment_name}' saved!")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Error saving chat segment: {e}")
+
+def load_chat_segments():
+    """Load and display available chat segments"""
+    try:
+        if not os.path.exists("data/chat_segments"):
+            st.info("No chat segments found")
+            return
+        
+        # Get all segment files
+        segment_files = [f for f in os.listdir("data/chat_segments") if f.endswith('.json')]
+        
+        if not segment_files:
+            st.info("No chat segments found")
+            return
+        
+        # Display segments
+        for i, filename in enumerate(segment_files):
+            try:
+                with open(f"data/chat_segments/{filename}", "r", encoding="utf-8") as f:
+                    segment_data = json.load(f)
+                
+                # Compact display for sidebar
+                with st.expander(f"📁 {segment_data.get('name', filename)}", expanded=False):
+                    st.caption(f"Created: {segment_data.get('created_at', 'Unknown')}")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("📂 Load", key=f"load_{i}", use_container_width=True):
+                            load_chat_segment(filename)
+                    with col2:
+                        if st.button("🗑️", key=f"delete_{i}", use_container_width=True):
+                            delete_chat_segment(filename)
+                
+            except Exception as e:
+                st.error(f"Error loading segment {filename}: {e}")
+                
+    except Exception as e:
+        st.error(f"Error loading chat segments: {e}")
+
+def load_chat_segment(filename):
+    """Load a specific chat segment"""
+    try:
+        with open(f"data/chat_segments/{filename}", "r", encoding="utf-8") as f:
+            segment_data = json.load(f)
+        
+        # Load messages and charts
+        st.session_state.messages = segment_data.get("messages", [])
+        st.session_state.charts = segment_data.get("charts", [])
+        
+        st.success(f"✅ Loaded chat segment: {segment_data.get('name', filename)}")
+        st.rerun()
+        
+    except Exception as e:
+        st.error(f"Error loading chat segment: {e}")
+
+def delete_chat_segment(filename):
+    """Delete a chat segment"""
+    try:
+        os.remove(f"data/chat_segments/{filename}")
+        st.success(f"✅ Deleted chat segment: {filename}")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Error deleting chat segment: {e}")
 
 # Typography tweak for better readability
 st.markdown(
     """
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
+    /* Apply Inter font to specific elements only */
+    .stTextInput input,
+    .stTextArea textarea,
+    .stSelectbox select,
+    .stButton button,
+    .stMarkdown,
+    .stWrite {
+        font-family: 'Inter', sans-serif !important;
+    }
+    
     .summary-text { 
         font-size: 15px; 
         line-height: 1.6; 
-        font-family: "Segoe UI", Roboto, Arial, sans-serif; 
+        font-family: 'Inter', sans-serif; 
         white-space: pre-wrap;
+    }
+    
+    /* Fix text input rendering */
+    .stTextInput input {
+        font-family: 'Inter', sans-serif !important;
+        font-size: 16px !important;
+        line-height: 1.5 !important;
+        letter-spacing: normal !important;
+        text-rendering: optimizeLegibility !important;
+    }
+    
+    /* Fix any overlapping text issues */
+    .stTextInput input::placeholder {
+        font-family: 'Inter', sans-serif !important;
+        opacity: 0.6 !important;
     }
     </style>
     """,
@@ -53,17 +273,60 @@ def get_orchestrator():
     return OrchestratorAgent()
 
 with st.sidebar:
-    st.header("Settings")
+    st.header("📚 Chat Segments")
+    
+    # Load chat segments
+    load_chat_segments()
+    
+    st.divider()
+    
+    st.header("⚙️ Settings")
     db_type = st.selectbox("Database Type", ["postgresql", "sqlite"], index=0)
     if db_type == "sqlite":
         db_path = st.text_input("SQLite path", value=DEFAULT_DB_PATH)
     else:
         st.info("Using PostgreSQL: localhost:5432/inventory_db")
-    model = st.text_input("Groq model", value=DEFAULT_MODEL)
-    use_semantic_search = st.checkbox("Use semantic search (ChromaDB)", value=True)
-    examples_path = st.text_input("Examples JSONL path", value=DEFAULT_EXAMPLES_PATH)
-    top_k = st.number_input("Top-k retrieved examples", min_value=1, max_value=10, value=RAG_TOP_K, step=1)
-    show_debug = st.checkbox("Show debug info", value=False)
+    
+    # Display current model
+    st.info(f"🤖 Model: {DEFAULT_MODEL}")
+    
+    # Hidden settings (use defaults)
+    use_semantic_search = True
+    examples_path = DEFAULT_EXAMPLES_PATH
+    top_k = RAG_TOP_K
+    show_debug = False
+    
+    st.divider()
+    
+    # Save as chat segment
+    segment_name = st.text_input("Segment name:", value="", placeholder="Enter segment name...")
+    if st.button("💾 Save as Chat Segment", use_container_width=True):
+        if segment_name.strip():
+            # Save with custom name
+            try:
+                if not st.session_state.messages:
+                    st.warning("No conversation to save")
+                else:
+                    segment_data = {
+                        "name": segment_name.strip(),
+                        "messages": st.session_state.messages,
+                        "charts": st.session_state.get("charts", []),
+                        "timestamp": time.time(),
+                        "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    
+                    os.makedirs("data/chat_segments", exist_ok=True)
+                    filename = f"data/chat_segments/{segment_name.strip().replace(' ', '_')}.json"
+                    with open(filename, "w", encoding="utf-8") as f:
+                        json.dump(segment_data, f, ensure_ascii=False, indent=2)
+                    
+                    st.success(f"✅ Chat segment '{segment_name.strip()}' saved!")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Error saving chat segment: {e}")
+        else:
+            save_chat_segment()
+    
     # Button trên
     if st.button("Check DB", use_container_width=True):
         try:
@@ -108,21 +371,56 @@ with tab_text2sql:
     # Clear chat button
     if st.button("🗑️ Clear Chat History"):
         st.session_state.messages = []
+        st.session_state.charts = []
+        # Clear conversation file
+        if os.path.exists("data/conversation.json"):
+            os.remove("data/conversation.json")
         st.rerun()
+    
+    
     
     # Create container for chat messages
     chat_container = st.container()
     
     # Display chat history in the container
     with chat_container:
-        for message in st.session_state.messages:
+        for i, message in enumerate(st.session_state.messages):
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
+                
+                # Display chart if this message has a chart
+                if "chart_index" in message and "charts" in st.session_state:
+                    chart_index = message["chart_index"]
+                    if chart_index < len(st.session_state.charts):
+                        chart_data = st.session_state.charts[chart_index]
+                        if chart_data:
+                            st.subheader("📊 Visualization")
+                            try:
+                                # Try to display as Plotly figure first (for new charts)
+                                if "chart" in chart_data and chart_data["chart"] is not None:
+                                    st.plotly_chart(chart_data["chart"], use_container_width=True)
+                                # Display PNG image (for loaded charts)
+                                elif "chart_png" in chart_data and chart_data["chart_png"]:
+                                    # Display with better quality and layout preservation
+                                    st.image(
+                                        chart_data["chart_png"], 
+                                        caption=chart_data.get("question", "Chart"), 
+                                        use_container_width=True,
+                                        channels="RGB"  # Ensure proper color channels
+                                    )
+                                else:
+                                    st.info("📊 Chart was saved but cannot be displayed")
+                            except Exception as e:
+                                st.error(f"Error displaying chart: {e}")
+    
     
     # Chat input at the bottom
     if question := st.chat_input("Ask about inventory data..."):
         # Add user message to chat history
         st.session_state.messages.append({"role": "user", "content": question})
+        
+        # Auto-save conversation
+        save_conversation()
         
         # Display user message in chat container
         with chat_container:
@@ -204,8 +502,8 @@ with tab_text2sql:
                         with st.chat_message("assistant"):
                             st.markdown(assistant_history_content, unsafe_allow_html=True)
                         
-                        # Add to chat history (including table markdown if present)
-                        st.session_state.messages.append({"role": "assistant", "content": assistant_history_content})
+                        # Prepare message content
+                        message_content = {"role": "assistant", "content": assistant_history_content}
                         
                         # Display chart if available
                         if "chart" in result and result["chart"]:
@@ -215,8 +513,47 @@ with tab_text2sql:
                                 import plotly.io as pio
                                 from streamlit import plotly_chart
                                 st.plotly_chart(result["chart"], use_container_width=True)
+                                
+                                # Save chart as PNG for persistence
+                                if "charts" not in st.session_state:
+                                    st.session_state.charts = []
+                                chart_index = len(st.session_state.charts)
+                                
+                                # Use Plotly's built-in download functionality for PNG
+                                try:
+                                    import plotly.io as pio
+                                    # Use the same method as Plotly's download button
+                                    png_bytes = pio.to_image(
+                                        result["chart"], 
+                                        format="png",
+                                        width=None,  # Let Plotly decide optimal size
+                                        height=None,
+                                        scale=1,  # Use default scale like download button
+                                        engine="kaleido"
+                                    )
+                                    chart_png = png_bytes
+                                except Exception as e:
+                                    st.warning(f"Could not convert chart to PNG: {e}")
+                                    chart_png = None
+                                
+                                st.session_state.charts.append({
+                                    "question": question,
+                                    "chart": result["chart"],  # Keep original for display
+                                    "chart_png": chart_png,   # PNG bytes for persistence
+                                    "timestamp": time.time()
+                                })
+                                
+                                # Add chart index to message
+                                message_content["chart_index"] = chart_index
+                                
                             except Exception:
                                 st.pyplot(result["chart"])  # fallback matplotlib
+                        
+                        # Add to chat history
+                        st.session_state.messages.append(message_content)
+                        
+                        # Auto-save conversation
+                        save_conversation()
                         
                         # Debug info (timings, intent, viz spec)
                         if show_debug and "debug" in result:

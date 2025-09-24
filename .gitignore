@@ -36,3 +36,8 @@ Thumbs.db
 # Cache
 .cache/
 .huggingface/
+
+# Chat data & conversations
+data/conversation.json
+data/conversation_backup_*.json
+data/chat_segments/
