@@ -501,6 +501,12 @@ with tab_text2sql:
                         assistant_history_content = full_response + history_suffix
                         with st.chat_message("assistant"):
                             st.markdown(assistant_history_content, unsafe_allow_html=True)
+                            
+                            # Display main data table in chat
+                            if result["data"] is not None and not result["data"].empty:
+                                st.markdown("**📊 Query Results:**")
+                                st.dataframe(result["data"], use_container_width=True)
+                                st.caption(f"📈 Total rows: {len(result['data'])}")
                         
                         # Prepare message content
                         message_content = {"role": "assistant", "content": assistant_history_content}
@@ -590,6 +596,7 @@ with tab_sql_console:
                 else:
                     st.subheader("Results")
                     st.code(sql_text, language="sql")
+                    
                     st.dataframe(df, use_container_width=True)
                     st.caption(f"Rows: {len(df)}")
             except Exception as e:

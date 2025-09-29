@@ -120,3 +120,12 @@ relationships:
   - "skus.sku_id -> inventory.sku_id"
   - "skus.sku_id -> sales.sku_id"
 
+# Sales Velocity Analysis
+velocity_concepts:
+  daily_velocity: "Average units sold per day = Total quantity sold / Number of days in period"
+  monthly_velocity: "Average units sold per month = Total quantity sold / Number of months in period"
+  stock_cover: "Days of stock remaining = Current inventory / Daily velocity"
+  calculation_methods:
+    - "Period-based: Uses total days/months in analysis period (includes zero-sale days)"
+    - "Active-based: Uses only days/months with actual sales"
+
