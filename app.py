@@ -480,10 +480,6 @@ with tab_text2sql:
                         if "sql" in result and result["sql"]:
                             response_parts.append(f"**SQL Query:**\n```sql\n{result['sql']}\n```")
                         
-                        # Add chart info
-                        if "chart" in result and result["chart"]:
-                            response_parts.append("📊 **Visualization generated**")
-                        
                         # Add report summary
                         if "summary" in result and result["summary"]:
                             summary = result["summary"]
@@ -498,8 +494,8 @@ with tab_text2sql:
                         with st.chat_message("assistant"):
                             st.markdown(assistant_history_content, unsafe_allow_html=True)
                             
-                            # Display main data table in chat
-                            if result["data"] is not None and not result["data"].empty:
+                            # Display main data table in chat (skip for visualize intent)
+                            if result["data"] is not None and not result["data"].empty and result.get("intent") != "visualize":
                                 st.markdown("**📊 Query Results:**")
                                 st.dataframe(result["data"], use_container_width=True)
                                 st.caption(f"📈 Total rows: {len(result['data'])}")
@@ -528,14 +524,21 @@ with tab_text2sql:
                                     png_bytes = pio.to_image(
                                         result["chart"], 
                                         format="png",
-                                        width=None,  # Let Plotly decide optimal size
-                                        height=None,
-                                        scale=1,  # Use default scale like download button
+                                        width=800,  # Fixed width for consistency
+                                        height=600, # Fixed height for consistency
+                                        scale=1,    # Use default scale like download button
                                         engine="kaleido"
                                     )
                                     chart_png = png_bytes
+                                except ImportError:
+                                    st.info("📊 Chart displayed successfully. Install 'kaleido' for PNG export.")
+                                    chart_png = None
                                 except Exception as e:
-                                    st.warning(f"Could not convert chart to PNG: {e}")
+                                    # More specific error handling
+                                    if "kaleido" in str(e).lower():
+                                        st.info("📊 Chart displayed successfully. Run: pip install kaleido")
+                                    else:
+                                        st.warning(f"Chart PNG export failed: {str(e)[:100]}")
                                     chart_png = None
                                 
                                 st.session_state.charts.append({

@@ -59,9 +59,42 @@ Sample rows: {sample}
             content = getattr(res, "content", "")
             match = re.search(r"\{[\s\S]*\}", content)
             spec = json.loads(match.group(0) if match else content)
-        except Exception:
-            # Fallback spec
-            spec = {"chart_type": "line", "x": "Date", "y": [df.select_dtypes(np.number).columns.tolist()[:1][0]] if df.select_dtypes(np.number).shape[1] else [], "title": "Auto Chart"}
+            
+            # Validate spec
+            if not isinstance(spec, dict):
+                raise ValueError("Invalid spec format")
+            if "chart_type" not in spec:
+                spec["chart_type"] = "bar"
+            if "title" not in spec:
+                spec["title"] = "Data Visualization"
+                
+        except Exception as e:
+            print(f"⚠️ LLM planning failed: {e}, using fallback")
+            # Better fallback spec
+            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+            categorical_cols = df.select_dtypes(include=['object', 'string']).columns.tolist()
+            
+            if len(numeric_cols) >= 1 and len(categorical_cols) >= 1:
+                spec = {
+                    "chart_type": "bar",
+                    "x": categorical_cols[0],
+                    "y": [numeric_cols[0]],
+                    "title": f"{numeric_cols[0]} by {categorical_cols[0]}"
+                }
+            elif len(numeric_cols) >= 2:
+                spec = {
+                    "chart_type": "scatter", 
+                    "x": numeric_cols[0],
+                    "y": [numeric_cols[1]],
+                    "title": f"{numeric_cols[1]} vs {numeric_cols[0]}"
+                }
+            else:
+                spec = {
+                    "chart_type": "bar",
+                    "x": df.columns[0] if len(df.columns) > 0 else "index",
+                    "y": [df.columns[1]] if len(df.columns) > 1 else [df.columns[0]],
+                    "title": "Data Overview"
+                }
         return spec
 
     @traceable(name="viz.render_from_spec")
@@ -97,29 +130,30 @@ Sample rows: {sample}
                 .agg(agg_func)
             )
 
-        # Plotly rendering
+        # Plotly rendering với better error handling
         try:
             if chart_type == "pie" and x and y_cols and len(y_cols) > 0:
-                # Pie chart: x as labels, y as values
-                labels_col = x
-                values_col = y_cols[0]
-                
-                # Create explode effect for top slice (like in your example)
-                explode_values = [0.1 if i == 0 else 0 for i in range(len(working))]
+                # Aggregate data if needed
+                if len(working) > 10:  # Too many slices
+                    top_9 = working.nlargest(9, y_cols[0])
+                    others_sum = working.nsmallest(len(working)-9, y_cols[0])[y_cols[0]].sum()
+                    if others_sum > 0:
+                        others_row = {x: 'Others', y_cols[0]: others_sum}
+                        top_9 = pd.concat([top_9, pd.DataFrame([others_row])], ignore_index=True)
+                    working = top_9
                 
                 fig = px.pie(
                     working, 
-                    names=labels_col, 
-                    values=values_col,
+                    names=x, 
+                    values=y_cols[0],
                     title=title,
                     color_discrete_sequence=px.colors.qualitative.Set2
                 )
                 
-                # Add explode effect by updating layout
                 fig.update_traces(
                     textposition='inside', 
                     textinfo='percent+label',
-                    hovertemplate='<b>%{label}</b><br>Value: %{value}<br>Percentage: %{percent}<extra></extra>'
+                    hovertemplate='<b>%{label}</b><br>Value: %{value:,.0f}<br>Percentage: %{percent}<extra></extra>'
                 )
                 
             elif chart_type == "donut" and x and y_cols and len(y_cols) > 0:
@@ -160,15 +194,31 @@ Sample rows: {sample}
                 )
                 
             elif chart_type == "bar" and x and y_cols and len(y_cols) > 0:
+                # Limit data points for better readability
+                if len(working) > 20:
+                    working = working.nlargest(20, y_cols[0])
+                    title += " (Top 20)"
+                
                 if len(y_cols) > 1:
-                    df_long = working.melt(id_vars=[x], value_vars=y_cols, var_name="Series", value_name="Value")
-                    fig = px.bar(df_long, x=x, y="Value", color="Series", barmode="group", title=title)
+                    df_long = working.melt(id_vars=[x], value_vars=y_cols, var_name="Metric", value_name="Value")
+                    fig = px.bar(df_long, x=x, y="Value", color="Metric", 
+                               barmode="group", title=title,
+                               color_discrete_sequence=px.colors.qualitative.Set1)
                 else:
                     col = y_cols[0]
                     if group_by and group_by in working.columns:
-                        fig = px.bar(working, x=x, y=col, color=group_by, barmode="group", title=title)
+                        fig = px.bar(working, x=x, y=col, color=group_by, 
+                                   title=title, barmode="group",
+                                   color_discrete_sequence=px.colors.qualitative.Set1)
                     else:
-                        fig = px.bar(working, x=x, y=col, title=title)
+                        fig = px.bar(working, x=x, y=col, title=title,
+                                   color_discrete_sequence=px.colors.qualitative.Set1)
+                        
+                # Improve bar chart appearance
+                fig.update_layout(
+                    xaxis_tickangle=-45 if len(working) > 5 else 0,
+                    showlegend=True if (len(y_cols) > 1 or group_by) else False
+                )
             else:
                 # default line; if multiple y -> add each as a trace
                 if x and y_cols and len(y_cols) > 0:
@@ -184,20 +234,45 @@ Sample rows: {sample}
                 else:
                     return None
 
-            fig.update_layout(template="plotly_white")
+            # Add better layout and styling
+            fig.update_layout(
+                template="plotly_white",
+                font=dict(size=12),
+                title=dict(font=dict(size=16, color='#2E86AB')),
+                margin=dict(t=60, b=60, l=60, r=60)
+            )
             return fig
-        except Exception:
-            # Fallback to matplotlib if plotly fails
-            fig, ax = plt.subplots(figsize=(10, 4))
+            
+        except Exception as plot_error:
+            print(f"⚠️ Plotly rendering failed: {plot_error}, falling back to matplotlib")
+            # Enhanced matplotlib fallback
+            # Matplotlib fallback với better styling
+            plt.style.use('seaborn-v0_8' if hasattr(plt.style, 'seaborn-v0_8') else 'default')
+            fig, ax = plt.subplots(figsize=(12, 6))
+            
             if chart_type == "pie" and x and y_cols and len(y_cols) > 0:
-                # Matplotlib pie chart with explode effect
+                # Limit pie slices
+                if len(working) > 8:
+                    top_7 = working.nlargest(7, y_cols[0])
+                    others_sum = working.nsmallest(len(working)-7, y_cols[0])[y_cols[0]].sum()
+                    if others_sum > 0:
+                        others_row = {x: 'Others', y_cols[0]: others_sum}
+                        top_7 = pd.concat([top_7, pd.DataFrame([others_row])], ignore_index=True)
+                    working = top_7
+                
                 labels = working[x].astype(str)
                 values = working[y_cols[0]]
-                explode = [0.1 if i == 0 else 0 for i in range(len(working))]
+                colors = plt.cm.Set2(np.linspace(0, 1, len(working)))
                 
-                ax.pie(values, labels=labels, autopct='%1.1f%%', 
-                      colors=plt.cm.Set2.colors, explode=explode)
-                ax.set_title(title)
+                wedges, texts, autotexts = ax.pie(values, labels=labels, autopct='%1.1f%%', 
+                                                colors=colors, startangle=90)
+                
+                # Improve text appearance
+                for autotext in autotexts:
+                    autotext.set_color('white')
+                    autotext.set_fontweight('bold')
+                    
+                ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
                 
             elif chart_type == "donut" and x and y_cols and len(y_cols) > 0:
                 # Matplotlib donut chart
@@ -213,20 +288,54 @@ Sample rows: {sample}
                 ax.add_artist(centre_circle)
                 ax.set_title(title)
             elif chart_type == "bar" and x and y_cols and len(y_cols) > 0:
+                # Limit bars for readability
+                if len(working) > 15:
+                    working = working.nlargest(15, y_cols[0])
+                    title += " (Top 15)"
+                
                 col = y_cols[0]
-                ax.bar(working[x].astype(str), working[col])
+                bars = ax.bar(working[x].astype(str), working[col], 
+                            color=plt.cm.Set1(np.linspace(0, 1, len(working))))
+                
+                # Add value labels on bars
+                for bar in bars:
+                    height = bar.get_height()
+                    ax.annotate(f'{height:,.0f}',
+                              xy=(bar.get_x() + bar.get_width() / 2, height),
+                              xytext=(0, 3),  # 3 points vertical offset
+                              textcoords="offset points",
+                              ha='center', va='bottom', fontsize=9)
+                
+                ax.set_xlabel(x, fontweight='bold')
+                ax.set_ylabel(col, fontweight='bold')
+                
+                # Rotate x-axis labels if too many
+                if len(working) > 5:
+                    plt.xticks(rotation=45, ha='right')
             else:
+                # Line chart fallback
                 if y_cols and len(y_cols) > 0:
-                    for col in y_cols:
-                        ax.plot(working[x], working[col], marker="o", linewidth=1.2, label=col)
-            ax.set_title(title)
-            if x and chart_type != "pie":
-                ax.set_xlabel(x)
-            if chart_type != "pie":
-                ax.set_ylabel("Value")
-                ax.grid(True, alpha=0.3)
-                if len(ax.lines) + len(ax.patches) > 1:
-                    ax.legend()
+                    colors = plt.cm.Set1(np.linspace(0, 1, len(y_cols)))
+                    for i, col in enumerate(y_cols):
+                        ax.plot(working[x] if x in working.columns else range(len(working)), 
+                               working[col], marker="o", linewidth=2.5, 
+                               label=col, color=colors[i], markersize=6)
+                    
+                    if len(y_cols) > 1:
+                        ax.legend(frameon=True, fancybox=True, shadow=True)
+            
+            # Enhanced styling
+            ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+            if x and chart_type not in ["pie", "donut"]:
+                ax.set_xlabel(x, fontweight='bold')
+            if chart_type not in ["pie", "donut"]:
+                if not ax.get_ylabel():
+                    ax.set_ylabel("Value", fontweight='bold')
+                ax.grid(True, alpha=0.3, linestyle='--')
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+            
+            plt.tight_layout()
             return fig
 
     @traceable(name="viz.plan_and_render")
