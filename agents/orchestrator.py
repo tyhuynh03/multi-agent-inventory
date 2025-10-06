@@ -6,7 +6,6 @@ Quyết định gọi agent nào dựa trên intent classification
 from agents.intent_agent import IntentClassificationAgent
 from agents.sql_agent import generate_sql
 from agents.viz_agent import VisualizationAgent
-from agents.report_agent import ReportAgent
 from agents.response_agent import ResponseAgent
 from db.connection import get_db, run_sql_unified
 from langsmith.run_helpers import traceable
@@ -17,7 +16,6 @@ import time
 class OrchestratorAgent:
     def __init__(self):
         self.intent_agent = IntentClassificationAgent()
-        self.report_agent = ReportAgent()
         self.response_agent = ResponseAgent()
         self.viz_agent = VisualizationAgent()
     
@@ -67,11 +65,6 @@ class OrchestratorAgent:
                 debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps, "context": {"db_type": db_type, "examples_path": examples_path, "top_k": top_k}}
             )
         
-        elif intent == "report":
-            return self._handle_report_intent(
-                user_question, db_type, use_retriever, examples_path, top_k,
-                debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps, "context": {"db_type": db_type, "examples_path": examples_path, "top_k": top_k}}
-            )
         
         elif intent == "schema":
             return self._handle_schema_intent(user_question, db_type)
@@ -261,84 +254,7 @@ class OrchestratorAgent:
                 "agent": "viz_agent"
             }
     
-    def _handle_report_intent(self, user_question: str, db_type: str, use_retriever: bool, 
-                            examples_path: str, top_k: int) -> dict:
-        """Handle report intent - Generate reports"""
-        try:
-            # Parse report type from user question
-            report_type = self._parse_report_type(user_question)
-            params = self._parse_report_params(user_question)
-            
-            # Generate report
-            result = self.report_agent.generate_report(
-                report_type=report_type,
-                db_type=db_type,
-                params=params
-            )
-            
-            if not result["success"]:
-                return {
-                    "success": False,
-                    "error": result["error"],
-                    "intent": "report",
-                    "agent": "report_agent"
-                }
-            
-            return {
-                "success": True,
-                "intent": "report",
-                "agent": "report_agent",
-                "report_type": result["report_type"],
-                "title": result["title"],
-                "description": result["description"],
-                "data": result["data"],
-                "summary": result["summary"],
-                "parameters": result["parameters"],
-                "message": result["message"]
-            }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Report processing error: {str(e)}",
-                "intent": "report",
-                "agent": "report_agent"
-            }
     
-    def _parse_report_type(self, user_question: str) -> str:
-        """Parse report type from user question"""
-        question_lower = user_question.lower()
-        
-        if any(word in question_lower for word in ["low stock", "low inventory", "below threshold"]):
-            return "low_stock"
-        elif any(word in question_lower for word in ["top", "best", "selling", "performance"]):
-            return "top_products"
-        elif any(word in question_lower for word in ["category", "categories", "by category"]):
-            return "category_summary"
-        elif any(word in question_lower for word in ["value", "valuation", "worth", "total value"]):
-            return "inventory_valuation"
-        elif any(word in question_lower for word in ["overstock", "excess", "too much"]):
-            return "overstock"
-        else:
-            # Default to low stock report
-            return "low_stock"
-    
-    def _parse_report_params(self, user_question: str) -> dict:
-        """Parse parameters from user question"""
-        import re
-        params = {}
-        
-        # Extract threshold for low stock/overstock
-        threshold_match = re.search(r'(\d+)\s*(?:units?|items?)?', user_question.lower())
-        if threshold_match:
-            params["threshold"] = int(threshold_match.group(1))
-        
-        # Extract limit for top products
-        limit_match = re.search(r'top\s*(\d+)', user_question.lower())
-        if limit_match:
-            params["limit"] = int(limit_match.group(1))
-        
-        return params
     
     def _handle_schema_intent(self, user_question: str, db_type: str) -> dict:
         """Handle schema intent - Database structure information"""

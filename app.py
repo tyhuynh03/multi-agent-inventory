@@ -468,7 +468,7 @@ with tab_text2sql:
                                 st.dataframe(result["data"], use_container_width=True)
                                 st.caption(f"Rows: {len(result['data'])}")
 
-                        # Build response content (no 'Results: X rows' in main reply)
+                        # Build response content (no markdown table, only Query Results table)
                         response_parts = []
                         
                         # Add natural language summary if available
@@ -492,13 +492,9 @@ with tab_text2sql:
                                 summary_text += f", {summary['total_products']} products"
                             response_parts.append(summary_text)
                         
-                        # Display the response
+                        # Display response content (no markdown table)
                         full_response = "\n\n".join(response_parts)
-                        # Persist table in chat history so it survives reruns
-                        history_suffix = ""
-                        if result.get("response_table_md"):
-                            history_suffix = "\n\n" + result["response_table_md"]
-                        assistant_history_content = full_response + history_suffix
+                        assistant_history_content = full_response  # No response_table_md
                         with st.chat_message("assistant"):
                             st.markdown(assistant_history_content, unsafe_allow_html=True)
                             

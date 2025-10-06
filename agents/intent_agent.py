@@ -45,10 +45,7 @@ You are an expert intent classifier for warehouse management systems. Analyze th
 2. **visualize**: Requests for charts, graphs, plots, or visual representations of data
    - Examples: "Show inventory trend chart", "Display sales chart over time", "Create a graph of inventory levels", "Plot demand vs supply", "Visualize data"
 
-3. **report**: Requests for comprehensive reports, summaries, or formatted business documents
-   - Examples: "Generate low stock report", "Create monthly summary", "Business performance report", "Inventory analysis report"
-
-4. **schema**: Questions about database structure, tables, columns, or data organization
+3. **schema**: Questions about database structure, tables, columns, or data organization
    - Examples: "What tables are in the database?", "Show database schema", "List all columns", "Describe table structure"
 
 **Important Guidelines:**
@@ -62,7 +59,7 @@ You are an expert intent classifier for warehouse management systems. Analyze th
 
 **Return result in JSON format:**
 {{
-    "intent": "query|visualize|report|schema",
+    "intent": "query|visualize|schema",
     "confidence": 0.95,
     "reasoning": "Detailed explanation of why this classification was chosen"
 }}
@@ -86,7 +83,7 @@ You are an expert intent classifier for warehouse management systems. Analyze th
                 result = json.loads(content)
             
             # Validate intent
-            valid_intents = ["query", "visualize", "report", "schema"]
+            valid_intents = ["query", "visualize", "schema"]
             if result.get("intent") not in valid_intents:
                 result["intent"] = "query"  # Default fallback
                 result["confidence"] = 0.5
@@ -109,16 +106,3 @@ You are an expert intent classifier for warehouse management systems. Analyze th
         result = self.classify_intent(user_question)
         return result["intent"] == "visualize"
     
-    def is_report_intent(self, user_question: str) -> bool:
-        """
-        Check if it's a report intent
-        """
-        result = self.classify_intent(user_question)
-        return result["intent"] == "report"
-    
-    def is_alert_intent(self, user_question: str) -> bool:
-        """
-        Check if it's an alert intent
-        """
-        result = self.classify_intent(user_question)
-        return result["intent"] == "alert"
