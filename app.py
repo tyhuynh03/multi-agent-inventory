@@ -447,6 +447,38 @@ with tab_text2sql:
                     if not result["success"]:
                         with st.chat_message("assistant"):
                             st.error(f"❌ {result['error']}")
+                            # Technical details for error case
+                            with st.expander("⚙️ Technical Details", expanded=False):
+                                # Show SQL if available
+                                if "sql" in result and result["sql"]:
+                                    st.markdown("**Generated SQL:**")
+                                    st.code(result["sql"], language="sql")
+                                # Optional debug sections
+                                if "debug" in result and isinstance(result["debug"], dict):
+                                    steps = result["debug"].get("steps") or []
+                                    if steps:
+                                        with st.expander("Steps", expanded=False):
+                                            st.json(steps)
+                                    gen = result["debug"].get("sql_generate") or {}
+                                    if gen:
+                                        model = gen.get("model")
+                                        if model:
+                                            st.caption(f"Model: {model}")
+                                        prompt_full = gen.get("prompt_full")
+                                        prompt_snippet = gen.get("prompt_snippet")
+                                        raw_response = gen.get("raw_response")
+                                        retry = gen.get("retry")
+                                        if prompt_full:
+                                            with st.expander("Prompt (full)", expanded=False):
+                                                st.code(prompt_full, language="markdown")
+                                        elif prompt_snippet:
+                                            with st.expander("Prompt snippet", expanded=False):
+                                                st.code(prompt_snippet, language="markdown")
+                                        if raw_response:
+                                            with st.expander("LLM raw response", expanded=False):
+                                                st.code(raw_response, language="markdown")
+                                        if retry:
+                                            st.caption("Retried: True")
                             # Add error to chat history
                             st.session_state.messages.append({"role": "assistant", "content": f"❌ Error: {result['error']}"})
                     else:
