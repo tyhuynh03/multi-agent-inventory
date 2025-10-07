@@ -83,13 +83,14 @@ class OrchestratorAgent:
             else:
                 db = get_db("data/inventory.db", "sqlite")
             t_sql0 = time.perf_counter()
-            result = generate_sql(
+            result, gen_debug = generate_sql(
                 question=user_question,
                 db=db,
                 model="openai/gpt-oss-20b",
                 examples_path=examples_path,
                 top_k=top_k,
-                use_semantic_search=use_retriever
+                use_semantic_search=use_retriever,
+                return_debug=True,
             )
             t_sql1 = time.perf_counter()
             (debug_base or {}).get("steps", []).append({
@@ -107,7 +108,8 @@ class OrchestratorAgent:
                     "sql": "Schema Information",
                     "data": None,
                     "schema_info": result,
-                    "message": "📋 Database schema information retrieved successfully!"
+                    "message": "📋 Database schema information retrieved successfully!",
+                    "debug": {**(debug_base or {}), "sql_generate": gen_debug},
                 }
             
             if not result:
@@ -115,7 +117,8 @@ class OrchestratorAgent:
                     "success": False,
                     "error": "Unable to generate SQL query",
                     "intent": "query",
-                    "agent": "sql_agent"
+                    "agent": "sql_agent",
+                    "debug": {**(debug_base or {}), "sql_generate": gen_debug},
                 }
             
             # Execute SQL
@@ -132,7 +135,9 @@ class OrchestratorAgent:
                     "success": False,
                     "error": f"SQL execution error: {error}",
                     "intent": "query",
-                    "agent": "sql_agent"
+                    "agent": "sql_agent",
+                    "sql": result,
+                    "debug": {**(debug_base or {}), "sql_generate": gen_debug},
                 }
             
             nl = self.response_agent.generate_response(user_question, df, result)
@@ -149,6 +154,7 @@ class OrchestratorAgent:
                     **(debug_base or {}),
                     "t_sql_generate_ms": (t_sql1 - t_sql0)*1000,
                     "t_sql_execute_ms": (t_exec1 - t_exec0)*1000,
+                    "sql_generate": gen_debug,
                 }
             }
             
@@ -170,13 +176,14 @@ class OrchestratorAgent:
             else:
                 db = get_db("data/inventory.db", "sqlite")
             t_sql0 = time.perf_counter()
-            sql = generate_sql(
+            sql, gen_debug = generate_sql(
                 question=user_question,
                 db=db,
                 model="openai/gpt-oss-20b",
                 examples_path=examples_path,
                 top_k=top_k,
-                use_semantic_search=use_retriever
+                use_semantic_search=use_retriever,
+                return_debug=True,
             )
             t_sql1 = time.perf_counter()
             (debug_base or {}).get("steps", []).append({
@@ -190,7 +197,8 @@ class OrchestratorAgent:
                     "success": False,
                     "error": "Unable to generate SQL query",
                     "intent": "visualize",
-                    "agent": "viz_agent"
+                    "agent": "viz_agent",
+                    "debug": {**(debug_base or {}), "sql_generate": gen_debug},
                 }
             
             # Execute SQL
@@ -207,7 +215,9 @@ class OrchestratorAgent:
                     "success": False,
                     "error": f"SQL execution error: {error}",
                     "intent": "visualize",
-                    "agent": "viz_agent"
+                    "agent": "viz_agent",
+                    "sql": sql,
+                    "debug": {**(debug_base or {}), "sql_generate": gen_debug},
                 }
             
             if df.empty:
@@ -243,6 +253,7 @@ class OrchestratorAgent:
                     "t_sql_generate_ms": (t_sql1 - t_sql0)*1000,
                     "t_sql_execute_ms": (t_exec1 - t_exec0)*1000,
                     "t_viz_ms": (t_viz1 - t_viz0)*1000,
+                    "sql_generate": gen_debug,
                 }
             }
             

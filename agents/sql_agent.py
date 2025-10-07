@@ -193,7 +193,7 @@ def generate_sql(
     # Add schema context at the beginning of prompt for better visibility
     prompt = schema_context + prompt
 
-    debug: Dict[str, object] = {"model": model, **meta, "retry": False, "prompt_snippet": prompt[:1500]}
+    debug: Dict[str, object] = {"model": model, **meta, "retry": False, "prompt_snippet": prompt[:1500], "prompt_full": prompt}
 
     # Directly invoke LLM with our composed prompt to avoid LangChain's default SQL prompt/schema
     raw_msg = llm.invoke(prompt)
