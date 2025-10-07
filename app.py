@@ -460,6 +460,7 @@ with tab_text2sql:
                             st.markdown("**Generated SQL:**")
                             st.code(result["sql"], language="sql")
                             
+                            
                             # Display results
                             st.markdown("**Results:**")
                             if "schema_info" in result and result["schema_info"]:

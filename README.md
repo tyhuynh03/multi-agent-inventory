@@ -58,24 +58,28 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 4. Tạo file .env
-Tạo file `.env` với nội dung:
-```env
-# Groq API Key - Get from https://console.groq.com/keys
-GROQ_API_KEY=your_actual_groq_api_key_here
+### 4. Thiết lập Environment Variables
+```bash
+# Copy file mẫu
+cp example.env .env
 
-# Database settings
-DEFAULT_DB_PATH=data/inventory.db
-DEFAULT_MODEL=llama-3.1-70b-versatile
-DEFAULT_EXAMPLES_PATH=data/examples.jsonl
-RAG_TOP_K=3
+# Chỉnh sửa .env với API keys của bạn
+nano .env  # hoặc dùng editor khác
 ```
 
-**Lấy GROQ_API_KEY:**
+**📋 Cấu hình bắt buộc:**
+- `GROQ_API_KEY`: Lấy từ [Groq Console](https://console.groq.com/keys) (FREE)
+
+**🔧 Cấu hình tùy chọn:**
+- `LANGCHAIN_API_KEY`: Lấy từ [LangSmith](https://smith.langchain.com/) (để debug/tracing)
+- `DATABASE_URL`: PostgreSQL connection string
+- `LOG_LEVEL`: Mức độ logging (DEBUG, INFO, WARNING, ERROR)
+
+**💡 Hướng dẫn lấy GROQ_API_KEY:**
 1. Truy cập: https://console.groq.com/keys
-2. Đăng ký/Đăng nhập tài khoản
+2. Đăng ký/Đăng nhập (miễn phí)
 3. Tạo API key mới
-4. Copy và thay thế `your_actual_groq_api_key_here`
+4. Copy và paste vào file `.env`
 
 ## 🐳 Chạy hệ thống
 
