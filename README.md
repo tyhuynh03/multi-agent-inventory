@@ -147,6 +147,26 @@ Click "Check DB" trong sidebar để kiểm tra kết nối.
 - **Temperature**: 0.1 (cho consistency)
 - **Top-k**: 3 (số examples retrieved)
 
+### RAG Settings
+- Hệ thống RAG nay đọc cấu hình từ `configs/settings.py` (có thể override qua biến môi trường):
+  - `INV_RAG_EMBEDDING_MODEL` (mặc định: `all-MiniLM-L6-v2`)
+  - `INV_CHROMA_PERSIST_DIR` (mặc định: `data/chroma_db`)
+  - `INV_RAG_TOP_K` (mặc định: `2`)
+  - `INV_RAG_SIMILARITY_THRESHOLD` (mặc định: `0.3`)
+
+Ví dụ `.env`:
+```env
+# RAG
+INV_RAG_EMBEDDING_MODEL=all-MiniLM-L6-v2
+INV_CHROMA_PERSIST_DIR=data/chroma_db
+INV_RAG_TOP_K=3
+INV_RAG_SIMILARITY_THRESHOLD=0.35
+```
+
+Lưu ý:
+- Sau khi đổi cấu hình RAG hoặc cập nhật `data/examples.jsonl`, dùng nút "Rebuild RAG Index" ở sidebar để xây lại chỉ mục.
+- `sentence-transformers` cần `torch`. Trên Windows nếu thiếu, cài `torch` CPU: `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
+
 ## 📁 Cấu trúc project
 
 ```
@@ -159,7 +179,6 @@ Click "Check DB" trong sidebar để kiểm tra kết nối.
 │   ├── sql_agent.py              # SQL generation
 │   ├── orchestrator.py           # Workflow coordination
 │   ├── viz_agent.py              # Visualization
-│   ├── report_agent.py           # Report generation
 │   └── response_agent.py         # Response formatting
 ├── 📊 data/                       # Data files
 │   ├── warehouse.csv             # Warehouse data
@@ -199,8 +218,9 @@ docker logs inventory_postgres
 - Nếu vẫn có warning, restart app
 
 ### RAG system lỗi
-- Tạm thời disable semantic search trong sidebar
-- Sẽ sửa trong version tiếp theo
+- Kiểm tra đã cài `torch` phù hợp cho `sentence-transformers`
+- Nhấn "Rebuild RAG Index" sau khi thay đổi examples hoặc cấu hình
+- Có thể tạm thời tắt semantic search nếu cần
 
 ## 🔄 Dừng hệ thống
 

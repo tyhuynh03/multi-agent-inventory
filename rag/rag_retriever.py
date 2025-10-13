@@ -9,6 +9,12 @@ import chromadb
 from typing import List, Dict, Tuple
 from sentence_transformers import SentenceTransformer
 from utils.logger import traceable
+from configs.settings import (
+    RAG_EMBEDDING_MODEL,
+    CHROMA_PERSIST_DIR,
+    RAG_TOP_K,
+    RAG_SIMILARITY_THRESHOLD,
+)
 
 
 class RAGRetriever:
@@ -19,8 +25,8 @@ class RAGRetriever:
     def __init__(
         self,
         collection_name: str = "sql_examples",
-        model_name: str = "all-MiniLM-L6-v2",
-        persist_directory: str = "data/chroma_db",
+        model_name: str = RAG_EMBEDDING_MODEL,
+        persist_directory: str = CHROMA_PERSIST_DIR,
     ):
         """
         Initialize RAG retriever with ChromaDB
@@ -185,7 +191,7 @@ class RAGRetriever:
 
     @traceable(name="rag.retrieve")
     def retrieve_similar_examples(
-        self, query: str, top_k: int = 3, similarity_threshold: float = 0.3
+        self, query: str, top_k: int = RAG_TOP_K, similarity_threshold: float = RAG_SIMILARITY_THRESHOLD
     ) -> List[Dict]:
         """
         Retrieve similar examples using semantic search
@@ -241,7 +247,7 @@ class RAGRetriever:
 
     @traceable(name="rag.build_fewshot_prompt")
     def build_fewshot_prompt(
-        self, query: str, top_k: int = 3, similarity_threshold: float = 0.3
+        self, query: str, top_k: int = RAG_TOP_K, similarity_threshold: float = RAG_SIMILARITY_THRESHOLD
     ) -> Tuple[str, Dict]:
         """
         Build few-shot prompt with semantically similar examples
