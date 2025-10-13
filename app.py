@@ -270,7 +270,7 @@ st.title("🤖 Multi-Agent for Inventory (PostgreSQL + LangChain, Groq)")
 # --- Initialize Orchestrator ---
 @st.cache_resource
 def get_orchestrator():
-    return OrchestratorAgent()
+    return OrchestratorAgent(db_type="postgresql")
 
 with st.sidebar:
     st.header("📚 Chat Segments")
@@ -488,9 +488,13 @@ with tab_text2sql:
                             if "intent" in result:
                                 st.markdown(f"**Intent:** {result['intent']}")
                             
-                            # Display SQL
-                            st.markdown("**Generated SQL:**")
-                            st.code(result["sql"], language="sql")
+                            # Display SQL (if available)
+                            if "sql" in result and result["sql"]:
+                                st.markdown("**Generated SQL:**")
+                                st.code(result["sql"], language="sql")
+                            elif result.get("intent") == "inventory_analytics":
+                                st.markdown("**Analytics Type:**")
+                                st.info(f"📊 {result.get('analytics_type', 'general_analytics')}")
                             
                             # Optional debug sections (wrapped in nested expanders)
                             if "debug" in result and isinstance(result["debug"], dict):
@@ -537,9 +541,14 @@ with tab_text2sql:
                             safe_text = escape(str(result["response"]))
                             response_parts.append(f"<div class='summary-text'>{safe_text}</div>")
                         
-                        # Add SQL query
+                        # Add SQL query (if available)
                         if "sql" in result and result["sql"]:
                             response_parts.append(f"**SQL Query:**\n```sql\n{result['sql']}\n```")
+                        
+                        # Add analytics info
+                        if result.get("intent") == "inventory_analytics" and result.get("analytics_type"):
+                            analytics_type = result.get("analytics_type", "").replace("_", " ").title()
+                            response_parts.append(f"📊 **Analytics Type:** {analytics_type}")
                         
                         # Add report summary
                         if "summary" in result and result["summary"]:

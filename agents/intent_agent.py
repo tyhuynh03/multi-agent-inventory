@@ -48,18 +48,24 @@ You are an expert intent classifier for warehouse management systems. Analyze th
 3. **schema**: Questions about database structure, tables, columns, or data organization
    - Examples: "What tables are in the database?", "Show database schema", "List all columns", "Describe table structure"
 
+4. **inventory_analytics**: Stock cover days analysis - how many days of inventory remaining based on sales velocity
+   - Examples: "Calculate stock cover days", "Show products with stock cover less than 30 days", "Top 10 products with lowest stock cover", "Show critical items", "Which products are running low", "Products with low coverage", "Stock cover analysis"
+
 **Important Guidelines:**
 - Focus on the user's INTENT, not just keywords
 - Consider context and business purpose
-- "Show" can mean different things: "Show data" = query, "Show chart" = visualize, "Show report" = report
+- "Show" can mean different things: "Show data" = query, "Show chart" = visualize
 - "Display" usually means visualize when referring to charts/graphs
-- "Generate" or "Create" usually means report when referring to business documents
+- Questions about "stock cover", "days of stock", "coverage" are ALWAYS inventory_analytics (not query)
+- Questions about "restock", "replenish", "critical", "warning" are inventory_analytics
+- Simple filters like "products WHERE price > 100" = query
+- Complex metrics like "stock cover < 30 days" = inventory_analytics
 
 **Question to classify:** "{user_question}"
 
 **Return result in JSON format:**
 {{
-    "intent": "query|visualize|schema",
+    "intent": "query|visualize|schema|inventory_analytics",
     "confidence": 0.95,
     "reasoning": "Detailed explanation of why this classification was chosen"
 }}
@@ -83,7 +89,7 @@ You are an expert intent classifier for warehouse management systems. Analyze th
                 result = json.loads(content)
             
             # Validate intent
-            valid_intents = ["query", "visualize", "schema"]
+            valid_intents = ["query", "visualize", "schema", "inventory_analytics"]
             if result.get("intent") not in valid_intents:
                 result["intent"] = "query"  # Default fallback
                 result["confidence"] = 0.5

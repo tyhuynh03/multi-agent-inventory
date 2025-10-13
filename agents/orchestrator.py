@@ -7,17 +7,20 @@ from agents.intent_agent import IntentClassificationAgent
 from agents.sql_agent import generate_sql
 from agents.viz_agent import VisualizationAgent
 from agents.response_agent import ResponseAgent
+from agents.analytics_agent import AnalyticsAgent
 from db.connection import get_db, run_sql_unified
 from langsmith.run_helpers import traceable
 import pandas as pd
 import time
+import re
 
 
 class OrchestratorAgent:
-    def __init__(self):
+    def __init__(self, db_type: str = "postgresql"):
         self.intent_agent = IntentClassificationAgent()
         self.response_agent = ResponseAgent()
         self.viz_agent = VisualizationAgent()
+        self.analytics_agent = AnalyticsAgent(db_type=db_type)
     
     @traceable(name="orchestrator.run_agent")
     def run_agent(self, user_question: str, db_type: str = "postgresql", 
@@ -68,6 +71,12 @@ class OrchestratorAgent:
         
         elif intent == "schema":
             return self._handle_schema_intent(user_question, db_type)
+        
+        elif intent == "inventory_analytics":
+            return self._handle_inventory_analytics_intent(
+                user_question, db_type,
+                debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps}
+            )
         
         else:
             # Fallback về query
@@ -294,4 +303,123 @@ class OrchestratorAgent:
                 "error": f"Schema processing error: {str(e)}",
                 "intent": "schema",
                 "agent": "schema_agent"
+            }
+    
+    def _extract_top_n(self, question: str) -> int:
+        """Extract 'top N' from question, default to 20"""
+        # Tìm pattern "top 10", "top 20", etc.
+        match = re.search(r'\btop\s+(\d+)\b', question.lower())
+        if match:
+            return int(match.group(1))
+        
+        # Nếu có từ "critical" or "urgent" or "warning" -> chỉ show critical/warning
+        if any(word in question.lower() for word in ['critical', 'urgent', 'cảnh báo', 'khẩn cấp']):
+            return 10  # Default 10 for critical
+        
+        # Default: top 20
+        return 20
+    
+    def _handle_inventory_analytics_intent(self, user_question: str, db_type: str, debug_base: dict | None = None) -> dict:
+        """Handle inventory analytics intent - FOCUS: Stock Cover Days only"""
+        try:
+            question_lower = user_question.lower()
+            
+            # Extract top N from question
+            limit = self._extract_top_n(user_question)
+            
+            # Calculate stock cover days
+            df = self.analytics_agent.calculate_stock_cover_days()
+            
+            if df.empty:
+                return {
+                    "success": False,
+                    "error": "No stock cover data available",
+                    "intent": "inventory_analytics",
+                    "agent": "analytics_agent"
+                }
+            
+            # Extract threshold from question (e.g., "less than 30 days", "under 45 days")
+            threshold = None
+            threshold_patterns = [
+                r'(?:less than|under|below|dưới|nhỏ hơn)\s+(\d+)\s*day',
+                r'(?:greater than|above|over|trên|lớn hơn)\s+(\d+)\s*day',
+            ]
+            
+            for pattern in threshold_patterns:
+                match = re.search(pattern, question_lower)
+                if match:
+                    threshold = int(match.group(1))
+                    is_less_than = any(word in pattern for word in ['less', 'under', 'below', 'dưới', 'nhỏ'])
+                    break
+            
+            # Filter based on question intent
+            if threshold is not None:
+                # Filter by specific threshold
+                if is_less_than:
+                    df = df[(df['stock_cover_days'].notna()) & (df['stock_cover_days'] < threshold)]
+                else:
+                    df = df[(df['stock_cover_days'].notna()) & (df['stock_cover_days'] > threshold)]
+            elif 'critical' in question_lower and 'warning' not in question_lower:
+                # CHỈ critical items (< 15 days)
+                df = df[df['stock_status'] == 'Critical']
+            elif 'warning' in question_lower or 'cảnh báo' in question_lower:
+                # Warning + Critical (< 30 days)
+                df = df[df['stock_status'].isin(['Critical', 'Warning'])]
+            elif 'low' in question_lower or 'lowest' in question_lower or 'sắp hết' in question_lower:
+                # Top N lowest stock cover (exclude No Sales)
+                df = df[df['stock_status'] != 'No Sales']
+            else:
+                # Default: exclude "No Sales" items
+                df = df[df['stock_status'] != 'No Sales']
+            
+            # Apply limit AFTER filtering
+            df = df.head(limit)
+            
+            analytics_type = "stock_cover_days"
+            
+            if df.empty:
+                return {
+                    "success": False,
+                    "error": "No data available for this analytics request",
+                    "intent": "inventory_analytics",
+                    "agent": "analytics_agent"
+                }
+            
+            # Generate natural language summary
+            nl_summary = self.analytics_agent.generate_analytics_report(user_question, df)
+            
+            # Add context note
+            if limit < 100:
+                nl_summary += f"\n\n*💡 Hiển thị top {len(df)} items (filtered). Hỏi 'top 50' hoặc 'all' để xem nhiều hơn.*"
+            
+            # Generate table markdown
+            table_md = None
+            try:
+                df_for_md = df.copy()
+                for col in df_for_md.select_dtypes(include=["number"]).columns:
+                    df_for_md[col] = df_for_md[col].round(2)
+                table_md = df_for_md.to_markdown(index=False)
+            except Exception:
+                table_md = None
+            
+            return {
+                "success": True,
+                "intent": "inventory_analytics",
+                "agent": "analytics_agent",
+                "analytics_type": analytics_type,
+                "sql": None,
+                "data": df,
+                "response": nl_summary,
+                "response_table_md": table_md,
+                "message": f"📊 Analytics completed! Generated {len(df)} insights.",
+                "debug": debug_base
+            }
+            
+        except Exception as e:
+            import traceback
+            return {
+                "success": False,
+                "error": f"Analytics processing error: {str(e)}\n{traceback.format_exc()}",
+                "intent": "inventory_analytics",
+                "agent": "analytics_agent"
             }
