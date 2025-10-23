@@ -11,10 +11,9 @@ matplotlib>=3.9.0
 PyYAML>=6.0
 chromadb>=0.4.0
 plotly>=5.0.0
-kaleido>=1.1.0
+kaleido==0.2.1
 
-# PostgreSQL dependencies
+# PostgreSQL dependencies - chỉ dùng binary version
 psycopg2-binary>=2.9.9
-psycopg2>=2.9.9
 seaborn>=0.13.2
 openpyxl>=3.1.2

@@ -2,6 +2,23 @@
 
 Hệ thống quản lý kho hàng thông minh sử dụng Multi-Agent AI với PostgreSQL, LangChain và Groq.
 
+## ⚡ Quick Start (3 bước)
+
+```bash
+# 1. Tạo file .env và điền GROQ_API_KEY
+copy example.env .env
+
+# 2. Chạy Docker
+docker-start.bat
+
+# 3. Mở trình duyệt
+http://localhost:8501
+```
+
+**💡 Lấy GROQ_API_KEY miễn phí:** https://console.groq.com/keys
+
+---
+
 ## 🚀 Tính năng chính
 
 - **🧠 Multi-Agent AI**: Intent Classification, SQL Generation, Query Execution, Response Generation
@@ -38,80 +55,112 @@ Hệ thống quản lý kho hàng thông minh sử dụng Multi-Agent AI với P
 - `order_quantity`: Số lượng đặt
 - `unit_sale_price`, `revenue`: Giá bán và doanh thu
 
-## 🛠️ Cài đặt
+## 🚀 Chạy dự án (Khuyến nghị cho nhóm)
 
-### 1. Clone repository
+### ⚡ Cách 1: Chạy bằng Docker (ĐƠN GIẢN NHẤT - KHUYẾN NGHỊ)
+
+**Yêu cầu:** Đã cài Docker Desktop
+
+#### Bước 1: Tạo file .env
+```bash
+copy example.env .env
+```
+Mở file `.env` và điền `GROQ_API_KEY` (lấy miễn phí tại https://console.groq.com/keys)
+
+#### Bước 2: Chạy
+```bash
+docker-start.bat
+```
+HOẶC
+```bash
+docker-compose up -d
+```
+
+#### Bước 3: Truy cập
+```
+http://localhost:8501
+```
+
+**✨ Lợi ích:**
+- ✅ Không cần cài Python packages
+- ✅ PostgreSQL tự động chạy
+- ✅ Dữ liệu tự động load từ CSV
+- ✅ RAG system tự động khởi tạo
+- ✅ Mọi thứ đã setup sẵn
+
+**📝 Lưu ý:** Lần đầu chạy mất ~2-3 phút để load dữ liệu và khởi tạo RAG.
+
+**🛠️ Các lệnh hữu ích:**
+```bash
+docker-compose logs -f        # Xem logs
+docker-compose down           # Dừng hệ thống
+docker-compose restart        # Restart
+docker-rebuild.bat            # Rebuild sau khi sửa code
+```
+
+---
+
+### 🐍 Cách 2: Chạy trực tiếp bằng Python (CHO DEVELOPMENT)
+
+#### 1. Clone repository
 ```bash
 git clone <repository-url>
 cd "Multi-agent system inventory"
 ```
 
-### 2. Tạo virtual environment
+#### 2. Tạo virtual environment
 ```bash
 python -m venv .venv
 .venv\Scripts\activate  # Windows
 # source .venv/bin/activate  # Linux/Mac
 ```
 
-### 3. Cài đặt dependencies
+#### 3. Cài đặt dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Thiết lập Environment Variables
+#### 4. Thiết lập Environment Variables
 ```bash
-# Copy file mẫu
-cp example.env .env
-
-# Chỉnh sửa .env với API keys của bạn
-nano .env  # hoặc dùng editor khác
+copy example.env .env
+# Mở .env và điền GROQ_API_KEY
 ```
 
 **📋 Cấu hình bắt buộc:**
 - `GROQ_API_KEY`: Lấy từ [Groq Console](https://console.groq.com/keys) (FREE)
 
 **🔧 Cấu hình tùy chọn:**
-- `LANGCHAIN_API_KEY`: Lấy từ [LangSmith](https://smith.langchain.com/) (để debug/tracing)
-- `DATABASE_URL`: PostgreSQL connection string
-- `LOG_LEVEL`: Mức độ logging (DEBUG, INFO, WARNING, ERROR)
+- `LANGSMITH_API_KEY`: Lấy từ [LangSmith](https://smith.langchain.com/) (để debug/tracing)
 
-**💡 Hướng dẫn lấy GROQ_API_KEY:**
-1. Truy cập: https://console.groq.com/keys
-2. Đăng ký/Đăng nhập (miễn phí)
-3. Tạo API key mới
-4. Copy và paste vào file `.env`
-
-## 🐳 Chạy hệ thống
-
-### 1. Khởi động PostgreSQL
+#### 5. Khởi động PostgreSQL (chỉ database)
 ```bash
-# Sử dụng Docker Compose
 docker-compose up -d postgres
-
-# Hoặc chạy script
-start_postgres.bat
+# Hoặc: start_postgres.bat
 ```
 
-### 2. Kiểm tra PostgreSQL
-```bash
-# Kiểm tra container
-docker ps
-
-# Kết nối database
-docker exec -it inventory_postgres psql -U inventory_user -d inventory_db
-```
-
-### 3. Load dữ liệu (nếu chưa có)
+#### 6. Load dữ liệu (nếu chưa có)
 ```bash
 python migrate_to_postgres.py
+python -m rag.initialize_rag
 ```
 
-### 4. Chạy Streamlit app
+#### 7. Chạy Streamlit app
 ```bash
-python -m streamlit run app.py
+streamlit run app.py
 ```
 
 Truy cập: http://localhost:8501
+
+---
+
+## 🎯 Lựa chọn cách chạy
+
+| Tình huống | Khuyến nghị |
+|------------|-------------|
+| **Lần đầu chạy / Demo** | 🐳 Docker (Cách 1) |
+| **Chạy cho nhóm xem** | 🐳 Docker (Cách 1) |
+| **Đang develop/sửa code** | 🐍 Python (Cách 2) |
+| **Deploy lên server** | 🐳 Docker (Cách 1) |
 
 ## 🎯 Sử dụng
 
@@ -196,6 +245,19 @@ Lưu ý:
 
 ## 🚨 Troubleshooting
 
+### Docker không chạy được
+```bash
+# Kiểm tra Docker Desktop đã chạy chưa
+docker --version
+
+# Xem logs
+docker-compose logs -f
+
+# Reset và chạy lại
+docker-compose down
+docker-compose up -d --build
+```
+
 ### PostgreSQL không kết nối được
 ```bash
 # Kiểm tra container
@@ -206,32 +268,60 @@ docker-compose restart postgres
 
 # Xem logs
 docker logs inventory_postgres
+
+# Vào database test
+docker exec -it inventory_postgres psql -U inventory_user -d inventory_db
 ```
 
 ### GROQ API Key lỗi
-- Kiểm tra file `.env` có đúng format
+- Kiểm tra file `.env` có đúng format và có `GROQ_API_KEY=gsk_...`
 - Verify API key tại https://console.groq.com/keys
-- Restart Streamlit app
+- Restart: `docker-compose restart app`
 
-### Lỗi pandas warning
-- Đã được sửa bằng SQLAlchemy
-- Nếu vẫn có warning, restart app
+### Data không load được
+```bash
+# Chạy migration manually
+docker exec -it inventory_app python migrate_to_postgres.py
+
+# Kiểm tra data
+docker exec inventory_postgres psql -U inventory_user -d inventory_db -c "SELECT COUNT(*) FROM warehouses;"
+```
 
 ### RAG system lỗi
-- Kiểm tra đã cài `torch` phù hợp cho `sentence-transformers`
-- Nhấn "Rebuild RAG Index" sau khi thay đổi examples hoặc cấu hình
-- Có thể tạm thời tắt semantic search nếu cần
+```bash
+# Rebuild RAG trong container
+docker exec -it inventory_app python -m rag.initialize_rag
+
+# Hoặc nhấn "Rebuild RAG Index" trong app
+```
+
+### Port 8501 đã được sử dụng
+Sửa `docker-compose.yml`:
+```yaml
+ports:
+  - "8502:8501"  # Đổi từ 8501 sang 8502
+```
 
 ## 🔄 Dừng hệ thống
 
+### Nếu chạy bằng Docker:
 ```bash
-# Dừng Streamlit (Ctrl+C trong terminal)
+docker-compose down
+# Hoặc: docker-stop.bat
+```
+
+### Nếu chạy bằng Python:
+```bash
+# Dừng Streamlit: Ctrl+C trong terminal
 
 # Dừng PostgreSQL
 docker-compose down
+# Hoặc: stop_postgres.bat
+```
 
-# Hoặc chạy script
-stop_postgres.bat
+### Reset toàn bộ (xóa cả data):
+```bash
+docker-compose down -v
 ```
 
 ## 📈 Performance

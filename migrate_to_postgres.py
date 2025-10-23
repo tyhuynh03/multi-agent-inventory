@@ -14,13 +14,13 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Cấu hình database
+# Cấu hình database từ environment variables
 DB_CONFIG = {
-    'host': 'localhost',
-    'port': 5432,
-    'database': 'inventory_db',
-    'user': 'inventory_user',
-    'password': 'inventory_pass'
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'port': int(os.getenv('DB_PORT', '5432')),
+    'database': os.getenv('DB_NAME', 'inventory_db'),
+    'user': os.getenv('DB_USER', 'inventory_user'),
+    'password': os.getenv('DB_PASSWORD', 'inventory_pass')
 }
 
 def connect_to_db():

@@ -8,7 +8,7 @@ from agents.sql_agent import generate_sql
 from agents.viz_agent import VisualizationAgent
 from agents.response_agent import ResponseAgent
 from agents.analytics_agent import AnalyticsAgent
-from db.connection import get_db, run_sql_unified
+from db.connection import get_db, run_sql_unified, get_postgres_url
 from langsmith.run_helpers import traceable
 import pandas as pd
 import time
@@ -88,7 +88,7 @@ class OrchestratorAgent:
         try:
             # Generate SQL
             if db_type == "postgresql":
-                db = get_db("postgresql://inventory_user:inventory_pass@localhost:5432/inventory_db", "postgresql")
+                db = get_db(get_postgres_url(), "postgresql")
             else:
                 db = get_db("data/inventory.db", "sqlite")
             t_sql0 = time.perf_counter()
@@ -181,7 +181,7 @@ class OrchestratorAgent:
         try:
             # Generate SQL
             if db_type == "postgresql":
-                db = get_db("postgresql://inventory_user:inventory_pass@localhost:5432/inventory_db", "postgresql")
+                db = get_db(get_postgres_url(), "postgresql")
             else:
                 db = get_db("data/inventory.db", "sqlite")
             t_sql0 = time.perf_counter()

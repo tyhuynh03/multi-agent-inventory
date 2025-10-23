@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Environment
+.env
+example.env
+
+# Data (có thể giữ lại nếu cần)
+data/conversation.json
+data/chat_segments/
+data/chroma_db/
+notebook/
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Documentation
+README.md
+report/
+*.md
+
+# Temporary files
+*.log
+*.tmp
+~*
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# macOS
+.DS_Store
+
