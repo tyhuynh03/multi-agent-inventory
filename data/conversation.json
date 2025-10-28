@@ -1,0 +1,106 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "Với mỗi SKU_id, xác định phần trăm doanh thu của từng loại khách hàng so với tổng doanh thu SKU_id đó"
+    },
+    {
+      "role": "assistant",
+      "content": "❌ Error: SQL execution error: Execution failed on sql 'SELECT sku_id, SUM(revenue) AS total_rev\n  FROM sales\n  GROUP BY sku_id\n)\nSELECT s.sku_id,\n       s.customer_type,\n       SUM(s.revenue) AS revenue,\n       t.total_rev,\n       (SUM(s.revenue)::numeric / t.total_rev * 100) AS pct_of_total\nFROM sales s\nJOIN total_rev t ON s.sku_id = t.sku_id\nGROUP BY s.sku_id, s.customer_type, t.total_rev\nORDER BY s.sku_id, s.customer_type': syntax error at or near \")\"\nLINE 4: )\n        ^\n"
+    },
+    {
+      "role": "user",
+      "content": "Với mỗi SKU_id, cho biết tổng số lượng đã bán và số lượng tồn hiện tại"
+    },
+    {
+      "role": "assistant",
+      "content": "<div class='summary-text'>SKU sales and inventory summary: see table below</div>\n\n**SQL Query:**\n```sql\nSELECT\n    sk.sku_id,\n    COALESCE(s.total_sold, 0) AS total_sold,\n    COALESCE(i.total_inventory, 0) AS current_inventory\nFROM skus sk\nLEFT JOIN (\n    SELECT sku_id, SUM(order_quantity) AS total_sold\n    FROM sales\n    GROUP BY sku_id\n) s ON sk.sku_id = s.sku_id\nLEFT JOIN (\n    SELECT sku_id, SUM(current_inventory_quantity) AS total_inventory\n    FROM inventory\n    GROUP BY sku_id\n) i ON sk.sku_id = i.sku_id\n```"
+    },
+    {
+      "role": "user",
+      "content": "Show total sales revenue by customer type?"
+    },
+    {
+      "role": "assistant",
+      "content": "<div class='summary-text'>Total sales revenue by customer type: see table below.</div>\n\n**SQL Query:**\n```sql\nSELECT customer_type, SUM(revenue) AS total_revenue\nFROM sales\nGROUP BY customer_type\nORDER BY total_revenue DESC\n```"
+    },
+    {
+      "role": "user",
+      "content": "For each sku_id, indicate the total quantity sold and the current quantity in stock"
+    },
+    {
+      "role": "assistant",
+      "content": "<div class='summary-text'>The table lists each sku_id with its total quantity sold and current quantity in stock, see table below.</div>\n\n**SQL Query:**\n```sql\nSELECT\n    s.sku_id,\n    COALESCE(sales_total.total_sold, 0) AS total_quantity_sold,\n    COALESCE(inv_total.current_stock, 0) AS current_quantity_in_stock\nFROM skus s\nLEFT JOIN (\n    SELECT sku_id, SUM(order_quantity) AS total_sold\n    FROM sales\n    GROUP BY sku_id\n) sales_total ON s.sku_id = sales_total.sku_id\nLEFT JOIN (\n    SELECT sku_id, SUM(current_inventory_quantity) AS current_stock\n    FROM inventory\n    GROUP BY sku_id\n) inv_total ON s.sku_id = inv_total.sku_id\nORDER BY s.sku_id\n```"
+    },
+    {
+      "role": "user",
+      "content": "v"
+    },
+    {
+      "role": "user",
+      "content": "find the gap between current inventory and total sales quantity for each SKU and warehouse."
+    },
+    {
+      "role": "assistant",
+      "content": "<div class='summary-text'>**Executive Summary:**  \nThe inventory‑to‑sales gap analysis reveals that three SKUs—1325AA, 1851CA, and 1244AA—are below their projected sales needs, with gaps of ‑13.1, ‑15.1, and ‑1,741.1 units respectively. Only two SKUs (3407CA and 1764AA) maintain a positive buffer, but the overall coverage is weak, especially for high‑volume items. Immediate replenishment and lead‑time review are essential to avoid stockouts.  \n\n**Key Insights:**  \n- 🚨 **Critical Shortages:** SKUs 1325AA, 1851CA, and 1244AA are significantly under‑stocked, risking unmet demand.  \n- ⚠️ **Lead‑time Impact:** The large gaps correlate with long average lead times (45–60 days) for these SKUs, amplifying the risk.  \n- ✅ **Positive Buffers:** Only 3407CA and 1764AA show surplus inventory, yet 1764AA’s buffer is modest (≈ 8.7 units).  \n\n**Recommended Actions:**  \n- 📦 **Urgent Replenishment:** Place expedited purchase orders for SKUs 1325AA, 1851CA, and 1244AA to cover at least the next 30 days of sales.  \n- ⏱️ **Lead‑time Optimization:** Negotiate shorter lead times or alternative suppliers for the high‑gap SKUs to reduce future inventory risk.  \n- 🔄 **Safety Stock Review:** Recalculate safety stock levels for all SKUs, prioritizing those with high sales velocity and long lead times.\n\n*💡 Hiển thị top 20 items (filtered). Hỏi &#x27;top 50&#x27; hoặc &#x27;all&#x27; để xem nhiều hơn.*</div>\n\n📊 **Analytics Type:** Stock Cover Days"
+    },
+    {
+      "role": "user",
+      "content": "find the gap between current inventory and total sales quantity for each SKU and warehouse."
+    },
+    {
+      "role": "assistant",
+      "content": "<div class='summary-text'>Inventory-sales gap per SKU and warehouse: see table below.</div>\n\n**SQL Query:**\n```sql\nSELECT\n    i.sku_id,\n    i.warehouse_id,\n    i.current_inventory_quantity,\n    COALESCE(s.total_sales_quantity, 0) AS total_sales_quantity,\n    (i.current_inventory_quantity - COALESCE(s.total_sales_quantity, 0)) AS inventory_sales_gap\nFROM inventory i\nLEFT JOIN (\n    SELECT\n        sku_id,\n        warehouse_id,\n        SUM(order_quantity) AS total_sales_quantity\n    FROM sales\n    GROUP BY sku_id, warehouse_id\n) s ON i.sku_id = s.sku_id\n   AND i.warehouse_id = s.warehouse_id\nORDER BY i.sku_id, i.warehouse_id\n```"
+    },
+    {
+      "role": "user",
+      "content": "Compare inventory and total sales quantity for each sku"
+    },
+    {
+      "role": "assistant",
+      "content": "<div class='summary-text'>Inventory and total sales quantity per SKU are shown below: see table below.</div>\n\n**SQL Query:**\n```sql\nSELECT\n    s.sku_id,\n    s.sku_name,\n    COALESCE(inv.total_inventory, 0) AS total_inventory_quantity,\n    COALESCE(sales.total_sales_quantity, 0) AS total_sales_quantity\nFROM\n    skus s\nLEFT JOIN (\n    SELECT\n        sku_id,\n        SUM(current_inventory_quantity) AS total_inventory\n    FROM\n        inventory\n    GROUP BY\n        sku_id\n) inv ON s.sku_id = inv.sku_id\nLEFT JOIN (\n    SELECT\n        sku_id,\n        SUM(order_quantity) AS total_sales_quantity\n    FROM\n        sales\n    GROUP BY\n        sku_id\n) sales ON s.sku_id = sales.sku_id\nORDER BY\n    s.sku_id\n```"
+    },
+    {
+      "role": "user",
+      "content": "Find the gap between inventory quantity and sales quantity per SKU per warehouse"
+    },
+    {
+      "role": "assistant",
+      "content": "<div class='summary-text'>Inventory-sales gap per SKU per warehouse: see table below</div>\n\n**SQL Query:**\n```sql\nSELECT\n    w.warehouse_code,\n    i.sku_id,\n    i.current_inventory_quantity,\n    COALESCE(SUM(s.order_quantity), 0) AS sales_quantity,\n    i.current_inventory_quantity - COALESCE(SUM(s.order_quantity), 0) AS inventory_sales_gap\nFROM inventory i\nJOIN warehouses w ON i.warehouse_id = w.warehouse_code\nLEFT JOIN sales s ON s.warehouse_id = i.warehouse_id AND s.sku_id = i.sku_id\nGROUP BY w.warehouse_code, i.sku_id, i.current_inventory_quantity\nORDER BY w.warehouse_code, i.sku_id\n```"
+    },
+    {
+      "role": "user",
+      "content": "Rank warehouses by inventory turnover ratio (sales / inventory)."
+    },
+    {
+      "role": "assistant",
+      "content": "<div class='summary-text'>Warehouses ranked by inventory turnover ratio: see table below.</div>\n\n**SQL Query:**\n```sql\nSELECT w.warehouse_code,\n       w.city,\n       w.province,\n       w.country,\n       COALESCE(s.total_sales, 0) AS total_sales,\n       COALESCE(i.total_inventory_value, 0) AS total_inventory_value,\n       CASE\n           WHEN COALESCE(i.total_inventory_value, 0) = 0 THEN NULL\n           ELSE COALESCE(s.total_sales, 0) / COALESCE(i.total_inventory_value, 0)\n       END AS inventory_turnover_ratio\nFROM warehouses w\nLEFT JOIN (\n    SELECT warehouse_id, SUM(revenue) AS total_sales\n    FROM sales\n    GROUP BY warehouse_id\n) s ON w.warehouse_code = s.warehouse_id\nLEFT JOIN (\n    SELECT warehouse_id, SUM(total_value) AS total_inventory_value\n    FROM inventory\n    GROUP BY warehouse_id\n) i ON w.warehouse_code = i.warehouse_id\nORDER BY inventory_turnover_ratio DESC\n```"
+    },
+    {
+      "role": "user",
+      "content": "Compare vendors’ average lead time against their sales performance."
+    },
+    {
+      "role": "assistant",
+      "content": "❌ Error: SQL execution error: Execution failed on sql 'SELECT vendor_id, AVG(lead_time_days) AS avg_lead_time\n    FROM orders\n    GROUP BY vendor_id\n),\nsales_perf AS (\n    SELECT vendor_id, SUM(sale_amount) AS total_sales\n    FROM sales\n    GROUP BY vendor_id\n)\nSELECT v.vendor_id,\n       v.vendor_name,\n       a.avg_lead_time,\n       s.total_sales\nFROM vendors v\nLEFT JOIN avg_lead a ON v.vendor_id = a.vendor_id\nLEFT JOIN sales_perf s ON v.vendor_id = s.vendor_id\nORDER BY v.vendor_id': syntax error at or near \")\"\nLINE 4: ),\n        ^\n"
+    },
+    {
+      "role": "user",
+      "content": "Show monthly revenue trend for the last 6 months"
+    },
+    {
+      "role": "assistant",
+      "content": "❌ Error: SQL execution error: Execution failed on sql 'SELECT\n    date_trunc('month', order_date) AS month,\n    SUM(amount) AS revenue\nFROM\n    orders\nWHERE\n    order_date >= date_trunc('month', current_date) - interval '5 months'\nGROUP BY\n    month\nORDER BY\n    month': relation \"orders\" does not exist\nLINE 5:     orders\n            ^\n"
+    },
+    {
+      "role": "user",
+      "content": "Find correlation between average lead time and total sales"
+    },
+    {
+      "role": "assistant",
+      "content": "<div class='summary-text'>The correlation between average lead time and total sales is 0.16862171731358355.</div>\n\n**SQL Query:**\n```sql\nSELECT corr(i.average_lead_time_days, s.revenue) AS correlation\nFROM inventory i\nJOIN sales s ON i.sku_id = s.sku_id AND i.warehouse_id = s.warehouse_id\n```"
+    }
+  ],
+  "charts": [],
+  "timestamp": 1761660173.5764272
+}
