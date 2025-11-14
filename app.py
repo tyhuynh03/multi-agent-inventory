@@ -388,6 +388,26 @@ with tab_text2sql:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
                 
+                # Display data table if this message has cached data
+                if "data" in message and message["data"] and len(message["data"]) > 0:
+                    try:
+                        df = pd.DataFrame(message["data"])
+                        # Ensure columns match original
+                        if "data_columns" in message:
+                            df = df[message["data_columns"]]
+                        
+                        st.markdown("**📊 Query Results:**")
+                        st.dataframe(df, use_container_width=True)
+                        
+                        row_count = message.get("row_count", len(df))
+                        if message.get("has_full_data", True):
+                            st.caption(f"📈 Total rows: {row_count}")
+                        else:
+                            st.caption(f"📈 Showing {len(df)} of {row_count} rows (sample)")
+                            st.info("💡 Tip: Re-run query to see full results")
+                    except Exception as e:
+                        st.warning(f"Could not display cached data: {e}")
+                
                 # Display chart if this message has a chart
                 if "chart_index" in message and "charts" in st.session_state:
                     chart_index = message["chart_index"]
@@ -570,8 +590,36 @@ with tab_text2sql:
                                 st.dataframe(result["data"], use_container_width=True)
                                 st.caption(f"📈 Total rows: {len(result['data'])}")
                         
-                        # Prepare message content
-                        message_content = {"role": "assistant", "content": assistant_history_content}
+                        # Prepare message content - include data for persistence
+                        message_content = {
+                            "role": "assistant", 
+                            "content": assistant_history_content
+                        }
+                        
+                        # Save data to message for persistence (limit to 500 rows to avoid memory issues)
+                        if result["data"] is not None and not result["data"].empty and result.get("intent") != "visualize":
+                            try:
+                                row_count = len(result["data"])
+                                if row_count <= 500:
+                                    # Save full data for small results
+                                    message_content["data"] = result["data"].to_dict('records')
+                                    message_content["data_columns"] = list(result["data"].columns)
+                                    message_content["row_count"] = row_count
+                                    message_content["has_full_data"] = True
+                                else:
+                                    # Save sample for large results
+                                    sample_df = result["data"].head(500)
+                                    message_content["data"] = sample_df.to_dict('records')
+                                    message_content["data_columns"] = list(result["data"].columns)
+                                    message_content["row_count"] = row_count
+                                    message_content["has_full_data"] = False
+                            except Exception as e:
+                                # If serialization fails, at least save metadata
+                                message_content["row_count"] = len(result["data"]) if not result["data"].empty else 0
+                        
+                        # Save SQL query for reference
+                        if result.get("sql"):
+                            message_content["sql"] = result["sql"]
                         
                         # Display chart if available
                         if "chart" in result and result["chart"]:

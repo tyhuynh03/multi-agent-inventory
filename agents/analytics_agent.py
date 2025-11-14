@@ -56,6 +56,7 @@ class AnalyticsAgent:
         # Build SQL query to calculate stock cover
         # NOTE: Using last available date in sales table instead of CURRENT_DATE
         # to handle historical data (2021-2023)
+        # Improved: Calculate avg_daily_sales using actual days with sales or period days
         sql = f"""
         WITH date_range AS (
             SELECT MAX(order_date) AS latest_date
@@ -65,7 +66,9 @@ class AnalyticsAgent:
             SELECT 
                 s.sku_id,
                 s.warehouse_id,
-                SUM(s.order_quantity) / {period_days}.0 AS avg_daily_sales
+                SUM(s.order_quantity)::numeric / {period_days}.0 AS avg_daily_sales,
+                COUNT(DISTINCT s.order_date) AS active_days,
+                SUM(s.order_quantity) AS total_quantity_sold
             FROM sales s
             CROSS JOIN date_range dr
             WHERE s.order_date >= dr.latest_date - INTERVAL '{period_days} days'
@@ -89,6 +92,8 @@ class AnalyticsAgent:
             ic.vendor_name,
             ic.current_inventory_quantity,
             COALESCE(ds.avg_daily_sales, 0) AS avg_daily_sales,
+            COALESCE(ds.active_days, 0) AS active_days,
+            COALESCE(ds.total_quantity_sold, 0) AS total_quantity_sold,
             CASE 
                 WHEN COALESCE(ds.avg_daily_sales, 0) > 0 
                 THEN ROUND(ic.current_inventory_quantity / ds.avg_daily_sales, 2)
@@ -103,7 +108,16 @@ class AnalyticsAgent:
                 WHEN ic.current_inventory_quantity / NULLIF(ds.avg_daily_sales, 0) < {self.HEALTHY_DAYS} THEN 'Healthy'
                 WHEN ic.current_inventory_quantity / NULLIF(ds.avg_daily_sales, 0) >= {self.OVERSTOCK_DAYS} THEN 'Overstock'
                 ELSE 'Good'
-            END AS stock_status
+            END AS stock_status,
+            CASE 
+                WHEN COALESCE(ds.avg_daily_sales, 0) > 0 AND ic.average_lead_time_days IS NOT NULL
+                THEN CASE 
+                    WHEN ic.current_inventory_quantity / NULLIF(ds.avg_daily_sales, 0) < ic.average_lead_time_days THEN 'At Risk'
+                    WHEN ic.current_inventory_quantity / NULLIF(ds.avg_daily_sales, 0) < ic.average_lead_time_days * 1.5 THEN 'Warning'
+                    ELSE 'Safe'
+                END
+                ELSE NULL
+            END AS stockout_risk
         FROM inventory_current ic
         LEFT JOIN daily_sales ds 
             ON ic.sku_id = ds.sku_id 
