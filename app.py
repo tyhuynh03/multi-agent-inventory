@@ -265,7 +265,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🤖 Multi-Agent for Inventory (PostgreSQL + LangChain, Groq)")
+st.title("🤖 Multi-Agent for Inventory")
 
 # --- Initialize Orchestrator ---
 @st.cache_resource
