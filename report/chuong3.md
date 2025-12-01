@@ -85,15 +85,22 @@ Dữ liệu của hệ thống được thu thập và xử lý từ bộ datase
 
 3.  **inventory (Tồn kho):**
     -   `id` (PK), `sku_id` (FK), `warehouse_id` (FK).
+    -   `vendor_name`: Tên nhà cung cấp.
     -   `current_inventory_quantity`: Số lượng tồn hiện tại.
+    -   `units`: Đơn vị tính (VD: Kg, Cái).
+    -   `unit_price`: Đơn giá bán.
+    -   `cost_per_sku`: Giá vốn.
     -   `total_value`: Tổng giá trị tồn kho.
     -   `average_lead_time_days`: Thời gian nhập hàng trung bình.
+    -   `maximum_lead_time_days`: Thời gian nhập hàng tối đa.
 
 4.  **sales (Bán hàng):**
     -   `id` (PK), `order_number`.
     -   `sku_id` (FK), `warehouse_id` (FK).
+    -   `customer_type`: Loại khách hàng (Bán buôn, Xuất khẩu...).
     -   `order_date`: Ngày đặt hàng.
     -   `order_quantity`: Số lượng bán.
+    -   `unit_sale_price`: Đơn giá bán thực tế.
     -   `revenue`: Doanh thu.
 
 *(Hệ thống còn sử dụng các View như `inventory_summary` và `sales_summary` để tối ưu hóa truy vấn cho Agent)*
@@ -102,15 +109,83 @@ Dữ liệu của hệ thống được thu thập và xử lý từ bộ datase
 *Hình 3.1. Sơ đồ quan hệ thực thể (ERD)*
 
 ## 3.5. Quy trình nghiệp vụ (Workflow)
-Luồng xử lý dữ liệu được điều phối bởi **Orchestrator Agent** như sau:
 
-1.  **Nhận câu hỏi:** Người dùng nhập câu hỏi vào giao diện Streamlit.
-2.  **Phân loại (Intent Classification):** Intent Agent xác định mục tiêu:
-    -   Nếu là **`query`**: Chuyển sang SQL Agent để sinh SQL -> Thực thi -> Response Agent trả lời.
-    -   Nếu là **`visualize`**: Chuyển sang SQL Agent để lấy dữ liệu -> Viz Agent vẽ biểu đồ -> Trả về Figure.
-    -   Nếu là **`inventory_analytics`**: Gọi Analytics Agent để tính toán Stock Cover Days -> Sinh báo cáo phân tích.
-    -   Nếu là **`schema`**: Trả về thông tin cấu trúc bảng và cột trong database.
-3.  **Tổng hợp kết quả:** Orchestrator nhận kết quả từ các Agent con và hiển thị định dạng phù hợp (Text, Table, Chart) lên giao diện.
+Hệ thống xử lý yêu cầu của người dùng theo 3 luồng chính tương ứng với các loại ý định (Intent):
+
+### 3.5.1. Luồng xử lý Truy vấn (Query Flow)
+Dành cho các câu hỏi tra cứu dữ liệu thông thường (ví dụ: "Tổng doanh thu tháng trước?").
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Orchestrator
+    participant SQLAgent
+    participant Database
+    participant ResponseAgent
+    
+    User->>Orchestrator: Đặt câu hỏi
+    Orchestrator->>Orchestrator: Phân loại Intent = "query"
+    Orchestrator->>SQLAgent: Yêu cầu sinh SQL
+    SQLAgent->>SQLAgent: RAG Retrieval + LLM
+    SQLAgent-->>Orchestrator: Trả về SQL Query
+    Orchestrator->>Database: Thực thi SQL
+    Database-->>Orchestrator: Trả về DataFrame
+    Orchestrator->>ResponseAgent: Yêu cầu tóm tắt
+    ResponseAgent-->>Orchestrator: Trả về câu trả lời Text
+    Orchestrator->>User: Hiển thị Kết quả + Text
+```
+
+### 3.5.2. Luồng xử lý Trực quan hóa (Visualize Flow)
+Dành cho các yêu cầu vẽ biểu đồ (ví dụ: "Vẽ biểu đồ doanh thu theo tháng").
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Orchestrator
+    participant SQLAgent
+    participant VizAgent
+    
+    User->>Orchestrator: Yêu cầu vẽ biểu đồ
+    Orchestrator->>Orchestrator: Phân loại Intent = "visualize"
+    Orchestrator->>SQLAgent: Sinh SQL lấy dữ liệu
+    SQLAgent-->>Orchestrator: Trả về SQL
+    Orchestrator->>Database: Thực thi SQL -> DataFrame
+    Orchestrator->>VizAgent: Gửi DataFrame
+    VizAgent->>VizAgent: LLM phân tích -> JSON Spec
+    VizAgent->>VizAgent: Plotly Render -> Figure
+    VizAgent-->>Orchestrator: Trả về Figure
+    Orchestrator->>User: Hiển thị Biểu đồ
+```
+
+### 3.5.3. Luồng xử lý Phân tích nâng cao (Analytics Flow)
+Dành cho các bài toán nghiệp vụ sâu (ví dụ: "Hàng nào sắp hết kho?").
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Orchestrator
+    participant AnalyticsAgent
+    participant Database
+    
+    User->>Orchestrator: Hỏi về tồn kho/rủi ro
+    Orchestrator->>Orchestrator: Intent = "inventory_analytics"
+    Orchestrator->>AnalyticsAgent: Yêu cầu phân tích
+    AnalyticsAgent->>Database: Chạy Query phức tạp (CTE)
+    Database-->>AnalyticsAgent: Trả về dữ liệu thô
+    AnalyticsAgent->>AnalyticsAgent: Tính Stock Cover Days
+    AnalyticsAgent->>AnalyticsAgent: Phân loại Rủi ro (Critical/Safe)
+    AnalyticsAgent-->>Orchestrator: Trả về Báo cáo chi tiết
+    Orchestrator->>User: Hiển thị Insight + Bảng
+```
+
+**Diễn giải quy trình:**
+1.  **Tiếp nhận:** Hệ thống nhận câu hỏi ngôn ngữ tự nhiên từ người dùng.
+2.  **Phân loại:** Intent Agent xác định mục đích của câu hỏi (Tra cứu, Vẽ biểu đồ, hay Phân tích).
+3.  **Xử lý chuyên biệt:**
+    -   *Query:* Sinh SQL -> Lấy dữ liệu -> Tóm tắt bằng lời.
+    -   *Visualize:* Lấy dữ liệu -> Lên kịch bản vẽ -> Render biểu đồ.
+    -   *Analytics:* Thực hiện các phép tính toán học phức tạp để đưa ra cảnh báo.
+4.  **Phản hồi:** Kết quả cuối cùng được tổng hợp và hiển thị trực quan trên giao diện Chat.
 
 ## 3.6. Thiết kế Giao diện (User Interface)
 Giao diện người dùng được xây dựng trên nền tảng **Streamlit**, chia thành 2 khu vực chính:
@@ -125,5 +200,5 @@ Giao diện người dùng được xây dựng trên nền tảng **Streamlit**
     -   **Tab SQL Console:** Công cụ dành cho người dùng chuyên sâu muốn chạy trực tiếp câu lệnh SQL.
     -   **Visualization:** Biểu đồ được vẽ tự động bằng Plotly và nhúng trực tiếp vào khung chat.
 
-![Giao diện chính của ứng dụng](path/to/your/ui_screenshot.png)
+![Giao diện chính của ứng dụng](images/ui_screenshot.png)
 *Hình 3.3. Giao diện chính của ứng dụng Chatbot*

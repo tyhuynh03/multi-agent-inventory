@@ -273,6 +273,10 @@ def get_orchestrator():
     return OrchestratorAgent(db_type="postgresql")
 
 with st.sidebar:
+    # Display University Logo
+    if os.path.exists("assets/logo.png"):
+        st.image("assets/logo.png", use_container_width=True)
+        
     st.header("📚 Chat Segments")
     
     # Load chat segments
@@ -326,6 +330,20 @@ with st.sidebar:
                 st.error(f"Error saving chat segment: {e}")
         else:
             save_chat_segment()
+            
+    st.divider()
+    
+    # Clear chat button
+    if st.button("🗑️ Clear Chat History", use_container_width=True):
+        st.session_state.messages = []
+        st.session_state.charts = []
+        # Clear conversation file
+        if os.path.exists("data/conversation.json"):
+            try:
+                os.remove("data/conversation.json")
+            except:
+                pass
+        st.rerun()
     
     # Button trên
     if st.button("Check DB", use_container_width=True):
@@ -363,19 +381,13 @@ with st.sidebar:
 
 # Tabs: Text-to-SQL and SQL Console
 # Keeping a single chat-like flow in Text-to-SQL and show charts under results.
-tab_text2sql, tab_sql_console = st.tabs(["Text-to-SQL", "SQL Console"]) 
+tab_text2sql, tab_sql_console = st.tabs(["AI Assistant", "SQL Console"]) 
 
 with tab_text2sql:
     st.write("Enter your question in English. The app will generate a `SELECT` query and run it on PostgreSQL.")
     
     # Clear chat button
-    if st.button("🗑️ Clear Chat History"):
-        st.session_state.messages = []
-        st.session_state.charts = []
-        # Clear conversation file
-        if os.path.exists("data/conversation.json"):
-            os.remove("data/conversation.json")
-        st.rerun()
+    # Clear chat button moved to sidebar
     
     
     

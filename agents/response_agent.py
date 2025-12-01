@@ -38,11 +38,11 @@ class ResponseAgent:
         row_count = len(df)
 
         system = (
-            "You are a concise analytics assistant. Given a user question and the resulting table, "
-            "respond in AT MOST ONE short sentence, mirroring the user's request. "
-            "Be factual and precise. Do NOT add extra stats (mean/min/max/quartiles) unless asked. "
-            "Do NOT include code fences. "
-            "If the result is tabular, write a one-line headline and end with: 'see table below'."
+            "You are a helpful and concise analytics assistant. Given a user question and the resulting table, "
+            "respond in 1-2 clear and natural English sentences. "
+            "Directly answer the user's question based on the data. "
+            "Do NOT add extra stats (mean/min/max) unless asked. "
+            "Do NOT include code fences or markdown formatting for the text part."
         )
 
         user = f"""
@@ -59,10 +59,9 @@ Preview (first 5 rows CSV):
 {preview_csv}
 
 Instructions:
-- Write at most 1 sentence.
-- Be precise and avoid speculation.
-- If a single value is present, state it succinctly.
-- No markdown fences.
+- Answer the question directly.
+- Keep it under 3 sentences.
+- Be professional and helpful.
 """
 
         try:
@@ -74,11 +73,20 @@ Instructions:
         # Chuẩn bị bảng Markdown luôn hiển thị (giới hạn 50 dòng, làm tròn số)
         table_md: Optional[str] = None
         try:
-            df_for_md = df.copy()
-            # Làm tròn số 2 chữ số để bảng gọn gàng
-            for col in df_for_md.select_dtypes(include=["number"]).columns:
-                df_for_md[col] = df_for_md[col].round(2)
-            table_md = df_for_md.head(50).to_markdown(index=False)
+            if df is not None and not df.empty:
+                df_for_md = df.copy()
+                # Làm tròn số 2 chữ số để bảng gọn gàng
+                for col in df_for_md.select_dtypes(include=["number"]).columns:
+                    df_for_md[col] = df_for_md[col].round(2)
+                
+                # Try using tabulate if available, otherwise fallback to simple string
+                try:
+                    table_md = df_for_md.head(50).to_markdown(index=False)
+                except ImportError:
+                    # Fallback if tabulate is missing
+                    table_md = df_for_md.head(50).to_string(index=False)
+                except Exception:
+                    table_md = None
         except Exception:
             table_md = None
 
