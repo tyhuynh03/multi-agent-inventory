@@ -274,8 +274,11 @@ def get_orchestrator():
 
 with st.sidebar:
     # Display University Logo
-    if os.path.exists("assets/logo.png"):
-        st.image("assets/logo.png", use_container_width=True)
+    logo_path = os.path.abspath("assets/logo.png")
+    if os.path.exists(logo_path):
+        st.image(logo_path, width=200)
+    elif os.path.exists("assets/logo1.jpg"):
+        st.image("assets/logo1.jpg", width=200)
         
     st.header("📚 Chat Segments")
     
@@ -333,38 +336,44 @@ with st.sidebar:
             
     st.divider()
     
-    # Clear chat button
-    if st.button("🗑️ Clear Chat History", use_container_width=True):
-        st.session_state.messages = []
-        st.session_state.charts = []
-        # Clear conversation file
-        if os.path.exists("data/conversation.json"):
-            try:
-                os.remove("data/conversation.json")
-            except:
-                pass
-        st.rerun()
+    # Clear chat button moved to main area
+    pass
     
-    # Button trên
-    if st.button("Check DB", use_container_width=True):
-        try:
-            if db_type == "postgresql":
-                # Test PostgreSQL connection
-                df, error = run_sql_unified("SELECT COUNT(*) as table_count FROM information_schema.tables WHERE table_schema = 'public'", "postgresql")
-                if error:
-                    st.error(f"PostgreSQL error: {error}")
+    # Button Check DB & Clear Chat (Side-by-side)
+    col_check, col_clear = st.columns(2)
+    
+    with col_check:
+        if st.button("Check DB", use_container_width=True):
+            try:
+                if db_type == "postgresql":
+                    # Test PostgreSQL connection
+                    df, error = run_sql_unified("SELECT COUNT(*) as table_count FROM information_schema.tables WHERE table_schema = 'public'", "postgresql")
+                    if error:
+                        st.error(f"PostgreSQL error: {error}")
+                    else:
+                        st.success("✅ Connected!")
+                        # Get table names
+                        df_tables, _ = run_sql_unified("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name", "postgresql")
+                        st.write("Tables:")
+                        st.code(df_tables['table_name'].tolist(), language="bash")
                 else:
-                    st.success("✅ PostgreSQL Connected!")
-                    # Get table names
-                    df_tables, _ = run_sql_unified("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name", "postgresql")
-                    st.write("Tables:")
-                    st.code(df_tables['table_name'].tolist(), language="bash")
-            else:
-                db = get_db(db_path, "sqlite")
-                st.success("✅ SQLite Connected. Tables:")
-                st.code(db.get_usable_table_names(), language="bash")
-        except Exception as e:
-            st.error(f"DB error: {e}")
+                    db = get_db(db_path, "sqlite")
+                    st.success("✅ Connected. Tables:")
+                    st.code(db.get_usable_table_names(), language="bash")
+            except Exception as e:
+                st.error(f"DB error: {e}")
+                
+    with col_clear:
+        if st.button("🗑️ Clear", use_container_width=True, help="Clear chat history"):
+            st.session_state.messages = []
+            st.session_state.charts = []
+            # Clear conversation file
+            if os.path.exists("data/conversation.json"):
+                try:
+                    os.remove("data/conversation.json")
+                except:
+                    pass
+            st.rerun()
     
     # Button dưới
     if st.button("🔄 Rebuild RAG Index", use_container_width=True):
@@ -385,9 +394,6 @@ tab_text2sql, tab_sql_console = st.tabs(["AI Assistant", "SQL Console"])
 
 with tab_text2sql:
     st.write("Enter your question in English. The app will generate a `SELECT` query and run it on PostgreSQL.")
-    
-    # Clear chat button
-    # Clear chat button moved to sidebar
     
     
     
@@ -466,6 +472,7 @@ with tab_text2sql:
             try:
                 # Use Orchestrator Agent
                 orchestrator = get_orchestrator()
+                start_time = time.perf_counter()
                 result = orchestrator.run_agent(
                     user_question=question,
                     db_type="postgresql",
@@ -473,6 +480,8 @@ with tab_text2sql:
                     examples_path=examples_path,
                     top_k=top_k
                 )
+                end_time = time.perf_counter()
+                duration = end_time - start_time
                 
                 # Display assistant response in chat container
                 with chat_container:
@@ -519,6 +528,8 @@ with tab_text2sql:
                             # Intent Classification
                             if "intent" in result:
                                 st.markdown(f"**Intent:** {result['intent']}")
+                            
+                            st.markdown(f"**⏱️ Execution Time:** {duration:.2f}s")
                             
                             # Display SQL (if available)
                             if "sql" in result and result["sql"]:
@@ -595,6 +606,7 @@ with tab_text2sql:
                         assistant_history_content = full_response  # No response_table_md
                         with st.chat_message("assistant"):
                             st.markdown(assistant_history_content, unsafe_allow_html=True)
+                            st.caption(f"⏱️ Processed in {duration:.2f}s")
                             
                             # Display main data table in chat (skip for visualize intent)
                             if result["data"] is not None and not result["data"].empty and result.get("intent") != "visualize":
@@ -681,8 +693,23 @@ with tab_text2sql:
                                 # Add chart index to message
                                 message_content["chart_index"] = chart_index
                                 
-                            except Exception:
-                                st.pyplot(result["chart"])  # fallback matplotlib
+                            except Exception as e:
+                                # If it's a Plotly figure, we shouldn't try st.pyplot
+                                is_plotly = False
+                                try:
+                                    import plotly.graph_objects as go
+                                    if isinstance(result["chart"], go.Figure):
+                                        is_plotly = True
+                                except:
+                                    pass
+                                
+                                if is_plotly:
+                                    st.error(f"Error displaying Plotly chart: {e}")
+                                else:
+                                    try:
+                                        st.pyplot(result["chart"])
+                                    except Exception as e2:
+                                        st.error(f"Error displaying chart: {e}. Fallback failed: {e2}")
                         
                         # Add to chat history
                         st.session_state.messages.append(message_content)

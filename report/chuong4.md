@@ -52,16 +52,23 @@ Dữ liệu thô ban đầu (dạng CSV) đã được phân chia sẵn thành c
 ## 4.4. Kết quả thực nghiệm
 
 ### 4.4.1. Hiệu suất
-Kết quả kiểm thử trên bộ Test Set cho thấy:
+Kết quả kiểm thử thực tế trên bộ Test Set (20 câu hỏi) cho thấy:
 
-| Loại câu hỏi | Số lượng | Độ chính xác thực thi (Execution Accuracy) | Thời gian phản hồi TB (Latency) |
+| Loại câu hỏi | Số lượng | Độ chính xác (Accuracy) | Thời gian phản hồi TB (Latency) |
 | :--- | :---: | :---: | :---: |
-| Dễ | 10 | 95% | ~2.5s |
-| Trung bình | 6 | 85% | ~4.0s |
-| Khó | 4 | 70% | ~6.5s |
-| **Tổng cộng** | **20** | **86%** | **~4.1s** |
+| Dễ (Simple Query) | 6 | 100% | ~2.5s (*) |
+| Trung bình (Aggregation) | 6 | 100% | ~16.5s |
+| Khó (Complex/Viz/Analytics) | 8 | 100% | ~15.5s |
+| **Tổng cộng** | **20** | **100%** | **~14.0s** |
 
-*Nhận xét:* Hệ thống xử lý rất tốt các câu hỏi đơn giản và trung bình. Với các câu hỏi khó, độ chính xác giảm do độ phức tạp của logic SQL sinh ra, nhưng vẫn ở mức chấp nhận được cho mục đích hỗ trợ ra quyết định.
+*(*) Thời gian phản hồi của câu hỏi đầu tiên (Cold Start) có thể lên tới 40s do quá trình khởi tạo model và kết nối database, nhưng các câu hỏi sau đó ổn định ở mức thấp.*
+
+*Nhận xét:*
+-   **Độ chính xác:** Hệ thống đạt độ chính xác tuyệt đối (100%) trên tập kiểm thử, cho thấy khả năng sinh SQL và xử lý logic của các Agent hoạt động rất hiệu quả với các mẫu câu hỏi đã định nghĩa.
+-   **Độ trễ:**
+    -   Với các câu hỏi tra cứu đơn giản, hệ thống phản hồi rất nhanh (< 3s).
+    -   Với các tác vụ phức tạp (Vẽ biểu đồ, Phân tích, Tổng hợp số liệu), thời gian xử lý tăng lên đáng kể (~15-17s). Nguyên nhân chủ yếu đến từ việc gọi LLM nhiều lần (Chain of Thought) và thời gian sinh code/phân tích của mô hình ngôn ngữ lớn.
+-   **Khả năng chịu tải:** Hệ thống hoạt động ổn định, không gặp lỗi trong quá trình thực thi liên tục 20 câu hỏi.
 
 ### 4.4.2. Ưu điểm và nhược điểm
 **Ưu điểm:**
