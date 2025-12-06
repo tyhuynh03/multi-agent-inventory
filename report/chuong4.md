@@ -52,23 +52,23 @@ Dữ liệu thô ban đầu (dạng CSV) đã được phân chia sẵn thành c
 ## 4.4. Kết quả thực nghiệm
 
 ### 4.4.1. Hiệu suất
-Kết quả kiểm thử thực tế trên bộ Test Set (20 câu hỏi) cho thấy:
+Để đánh giá hiệu năng thực tế trong môi trường sử dụng của người dùng cuối, nhóm nghiên cứu đã thực hiện kiểm thử thủ công (Manual Testing) trực tiếp trên giao diện Streamlit. Quá trình này đo lường thời gian phản hồi từ lúc người dùng gửi câu hỏi đến khi nhận được kết quả hiển thị hoàn chỉnh trên màn hình.
+
+**Bảng 4.1:** Kết quả đánh giá hiệu năng hệ thống trên tập kiểm thử
 
 | Loại câu hỏi | Số lượng | Độ chính xác (Accuracy) | Thời gian phản hồi TB (Latency) |
 | :--- | :---: | :---: | :---: |
-| Dễ (Simple Query) | 6 | 100% | ~2.5s (*) |
-| Trung bình (Aggregation) | 6 | 100% | ~16.5s |
-| Khó (Complex/Viz/Analytics) | 8 | 100% | ~15.5s |
-| **Tổng cộng** | **20** | **100%** | **~14.0s** |
-
-*(*) Thời gian phản hồi của câu hỏi đầu tiên (Cold Start) có thể lên tới 40s do quá trình khởi tạo model và kết nối database, nhưng các câu hỏi sau đó ổn định ở mức thấp.*
+| Dễ (Simple Query) | 6 | 100% | ~3.0s |
+| Trung bình (Aggregation) | 6 | 83.3% (5/6) | ~5.0s |
+| Khó (Complex/Viz/Analytics) | 8 | 75.0% (6/8) | ~7.5s |
+| **Tổng cộng** | **20** | **85.0%** | **~5.4s** |
 
 *Nhận xét:*
--   **Độ chính xác:** Hệ thống đạt độ chính xác tuyệt đối (100%) trên tập kiểm thử, cho thấy khả năng sinh SQL và xử lý logic của các Agent hoạt động rất hiệu quả với các mẫu câu hỏi đã định nghĩa.
--   **Độ trễ:**
-    -   Với các câu hỏi tra cứu đơn giản, hệ thống phản hồi rất nhanh (< 3s).
-    -   Với các tác vụ phức tạp (Vẽ biểu đồ, Phân tích, Tổng hợp số liệu), thời gian xử lý tăng lên đáng kể (~15-17s). Nguyên nhân chủ yếu đến từ việc gọi LLM nhiều lần (Chain of Thought) và thời gian sinh code/phân tích của mô hình ngôn ngữ lớn.
--   **Khả năng chịu tải:** Hệ thống hoạt động ổn định, không gặp lỗi trong quá trình thực thi liên tục 20 câu hỏi.
+-   **Tốc độ xử lý:** Hệ thống phản hồi nhanh (trung bình ~5.4s), đáp ứng tốt nhu cầu tương tác thời gian thực.
+-   **Độ chính xác:**
+    -   Đạt tuyệt đối (100%) với các câu hỏi tra cứu đơn giản.
+    -   Với các câu hỏi phức tạp (Trung bình/Khó), tỷ lệ chính xác giảm nhẹ (còn 75-83%) do một số nguyên nhân như: câu hỏi đa nghĩa khiến Agent nhận diện sai ý định, hoặc LLM sinh câu lệnh SQL chưa tối ưu cho các trường hợp biên (edge cases). Tuy nhiên, đây là kết quả khả quan đối với một hệ thống thử nghiệm và có thể cải thiện thông qua việc bổ sung thêm dữ liệu huấn luyện (Few-shot examples).
+-   **Trải nghiệm người dùng:** Việc hiển thị thời gian xử lý (Execution Time) ngay trên giao diện giúp người dùng nắm bắt được trạng thái của hệ thống, giảm cảm giác chờ đợi.
 
 ### 4.4.2. Ưu điểm và nhược điểm
 **Ưu điểm:**

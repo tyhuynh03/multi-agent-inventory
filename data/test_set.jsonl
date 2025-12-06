@@ -1,4 +1,4 @@
-{"question": "What is the product name for SKU with ID 9999ZZ?", "sql": "SELECT sku_name FROM skus WHERE sku_id = '9999ZZ'"}
+{"question": "What is the product name for SKU with ID 1009AA?", "sql": "SELECT sku_name FROM skus WHERE sku_id = '9999ZZ'"}
 {"question": "What is the city of the warehouse with code WH-001?", "sql": "SELECT city FROM warehouses WHERE warehouse_code = 'WH-001'"}
 {"question": "What is the current inventory quantity for SKU 8888YY at warehouse WH-002?", "sql": "SELECT current_inventory_quantity FROM inventory WHERE sku_id = '8888YY' AND warehouse_id = 'WH-002'"}
 {"question": "What is the order date for order number SO - 123456?", "sql": "SELECT order_date FROM sales WHERE order_number = 'SO - 123456'"}

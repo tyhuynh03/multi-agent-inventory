@@ -1,7 +1,11 @@
 # MỤC LỤC
 
 DANH MỤC HÌNH ẢNH  
-DANH MỤC BẢNG BIỂU  
+DANH MỤC BẢNG BIỂU
+
+| Số bảng | Tên bảng | Trang |
+| :--- | :--- | :--- |
+| **Bảng 4.1** | Kết quả đánh giá hiệu năng hệ thống trên tập kiểm thử | |  
 **DANH MỤC TỪ VIẾT TẮT**
 
 | Từ viết tắt | Từ đầy đủ | Ý nghĩa |

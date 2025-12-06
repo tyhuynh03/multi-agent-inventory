@@ -327,55 +327,119 @@ class OrchestratorAgent:
             # Extract top N from question
             limit = self._extract_top_n(user_question)
             
-            # Calculate stock cover days
-            df = self.analytics_agent.calculate_stock_cover_days()
+            # Determine analytics type: Stock Cover vs Turnover
+            is_turnover = any(x in question_lower for x in ['turnover', 'rotation', 'vòng quay', 'tốc độ bán'])
             
-            if df.empty:
-                return {
-                    "success": False,
-                    "error": "No stock cover data available",
-                    "intent": "inventory_analytics",
-                    "agent": "analytics_agent"
+            if is_turnover:
+                df = self.analytics_agent.calculate_inventory_turnover()
+                analytics_type = "inventory_turnover"
+                if df.empty:
+                    return {
+                        "success": False,
+                        "error": "No turnover data available",
+                        "intent": "inventory_analytics",
+                        "agent": "analytics_agent"
+                    }
+                
+                # Check for "lowest" or "slowest" (Bottom performing items)
+                if any(x in question_lower for x in ['low', 'lowest', 'slow', 'chậm', 'bottom', 'ít nhất']):
+                    df = df.sort_values('turnover_ratio', ascending=True)
+
+                # Apply limit
+                df = df.head(limit)
+                
+                # SIMPLIFY TABLE for Turnover
+                cols_to_keep = [
+                    'sku_name', 'turnover_ratio', 'days_to_sell_inventory', 
+                    'avg_inventory', 'total_sales_qty'
+                ]
+                existing_cols = [c for c in cols_to_keep if c in df.columns]
+                df = df[existing_cols]
+                
+                rename_map = {
+                    'sku_name': 'Product Name',
+                    'turnover_ratio': 'Turnover Rate',
+                    'days_to_sell_inventory': 'Days to Sell',
+                    'avg_inventory': 'Avg Stock',
+                    'total_sales_qty': 'Total Sold'
                 }
-            
-            # Extract threshold from question (e.g., "less than 30 days", "under 45 days")
-            threshold = None
-            threshold_patterns = [
-                r'(?:less than|under|below|dưới|nhỏ hơn)\s+(\d+)\s*day',
-                r'(?:greater than|above|over|trên|lớn hơn)\s+(\d+)\s*day',
-            ]
-            
-            for pattern in threshold_patterns:
-                match = re.search(pattern, question_lower)
-                if match:
-                    threshold = int(match.group(1))
-                    is_less_than = any(word in pattern for word in ['less', 'under', 'below', 'dưới', 'nhỏ'])
-                    break
-            
-            # Filter based on question intent
-            if threshold is not None:
-                # Filter by specific threshold
-                if is_less_than:
-                    df = df[(df['stock_cover_days'].notna()) & (df['stock_cover_days'] < threshold)]
-                else:
-                    df = df[(df['stock_cover_days'].notna()) & (df['stock_cover_days'] > threshold)]
-            elif 'critical' in question_lower and 'warning' not in question_lower:
-                # CHỈ critical items (< 15 days)
-                df = df[df['stock_status'] == 'Critical']
-            elif 'warning' in question_lower or 'cảnh báo' in question_lower:
-                # Warning + Critical (< 30 days)
-                df = df[df['stock_status'].isin(['Critical', 'Warning'])]
-            elif 'low' in question_lower or 'lowest' in question_lower or 'sắp hết' in question_lower:
-                # Top N lowest stock cover (exclude No Sales)
-                df = df[df['stock_status'] != 'No Sales']
+                df = df.rename(columns=rename_map)
+                
+                # Format "Days to Sell" for better display: None -> "Dead Stock"
+                if 'Days to Sell' in df.columns:
+                    df['Days to Sell'] = df['Days to Sell'].fillna('Dead Stock').astype(str)
+                
             else:
-                # Default: exclude "No Sales" items
-                df = df[df['stock_status'] != 'No Sales']
-            
-            # Apply limit AFTER filtering
-            df = df.head(limit)
-            
-            analytics_type = "stock_cover_days"
+                # Default: Stock Cover Days analysis
+                df = self.analytics_agent.calculate_stock_cover_days()
+                analytics_type = "stock_cover_days"
+                
+                if df.empty:
+                    return {
+                        "success": False,
+                        "error": "No stock cover data available",
+                        "intent": "inventory_analytics",
+                        "agent": "analytics_agent"
+                    }
+                
+                # Extract threshold from question (e.g., "less than 30 days", "under 45 days")
+                threshold = None
+                threshold_patterns = [
+                    r'(?:less than|under|below|dưới|nhỏ hơn)\s+(\d+)\s*day',
+                    r'(?:greater than|above|over|trên|lớn hơn)\s+(\d+)\s*day',
+                ]
+                
+                for pattern in threshold_patterns:
+                    match = re.search(pattern, question_lower)
+                    if match:
+                        threshold = int(match.group(1))
+                        is_less_than = any(word in pattern for word in ['less', 'under', 'below', 'dưới', 'nhỏ'])
+                        break
+                
+                # Filter based on question intent
+                if threshold is not None:
+                    # Filter by specific threshold
+                    if is_less_than:
+                        df = df[(df['stock_cover_days'].notna()) & (df['stock_cover_days'] < threshold)]
+                    else:
+                        df = df[(df['stock_cover_days'].notna()) & (df['stock_cover_days'] > threshold)]
+                elif 'critical' in question_lower and 'warning' not in question_lower:
+                    # CHỈ critical items (< 15 days)
+                    df = df[df['stock_status'] == 'Critical']
+                elif any(x in question_lower for x in ['warning', 'cảnh báo', 'risk', 'danger', 'run out', 'running out', 'hết hàng', 'nguy cơ']):
+                    # Warning + Critical (< 30 days)
+                    df = df[df['stock_status'].isin(['Critical', 'Warning', 'At Risk'])]
+                elif any(x in question_lower for x in ['low', 'lowest', 'sắp hết', 'ít nhất']):
+                    # Top N lowest stock cover (exclude No Sales)
+                    df = df[df['stock_status'] != 'No Sales']
+                    df = df.sort_values('stock_cover_days', ascending=True)
+                else:
+                    # Default: exclude "No Sales" items
+                    df = df[df['stock_status'] != 'No Sales']
+                
+                # Apply limit AFTER filtering
+                df = df.head(limit)
+                
+                # SIMPLIFY TABLE: Select and rename columns for cleaner display
+                cols_to_keep = [
+                    'sku_id', 'sku_name', 'current_inventory_quantity', 
+                    'avg_daily_sales', 'stock_cover_days', 'stock_status'
+                ]
+                
+                # Check if columns exist (sometimes avg_daily_sales might be missing if no sales)
+                existing_cols = [c for c in cols_to_keep if c in df.columns]
+                df = df[existing_cols]
+                
+                # Rename for display
+                rename_map = {
+                    'sku_id': 'SKU ID',
+                    'sku_name': 'Product Name', 
+                    'current_inventory_quantity': 'Stock',
+                    'avg_daily_sales': 'Sales/Day',
+                    'stock_cover_days': 'Cover Days',
+                    'stock_status': 'Status'
+                }
+                df = df.rename(columns=rename_map)
             
             if df.empty:
                 return {
@@ -384,15 +448,11 @@ class OrchestratorAgent:
                     "intent": "inventory_analytics",
                     "agent": "analytics_agent"
                 }
-            
+
             # Generate natural language summary
             nl_summary = self.analytics_agent.generate_analytics_report(user_question, df)
             
-            # Add context note
-            if limit < 100:
-                nl_summary += f"\n\n*💡 Hiển thị top {len(df)} items (filtered). Hỏi 'top 50' hoặc 'all' để xem nhiều hơn.*"
-            
-            # Generate table markdown
+            # Generate table markdown (modified to remove context note)
             table_md = None
             try:
                 df_for_md = df.copy()

@@ -1,5 +1,6 @@
 import os
 import time
+import datetime
 import json
 import pickle
 from html import escape
@@ -123,8 +124,14 @@ def save_conversation():
             "charts": serializable_charts,
             "timestamp": time.time()
         }
+        class DateTimeEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, (pd.Timestamp, datetime.date, datetime.datetime)):
+                    return obj.isoformat()
+                return super().default(obj)
+
         with open("data/conversation.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            json.dump(data, f, ensure_ascii=False, indent=2, cls=DateTimeEncoder)
     except Exception as e:
         st.error(f"Error saving conversation: {e}")
 
@@ -584,8 +591,8 @@ with tab_text2sql:
                             safe_text = escape(str(result["response"]))
                             response_parts.append(f"<div class='summary-text'>{safe_text}</div>")
                         
-                        # Add SQL query (if available)
-                        if "sql" in result and result["sql"]:
+                        # Add SQL query (if available) - Hide for visualization
+                        if "sql" in result and result["sql"] and result.get("intent") != "visualize":
                             response_parts.append(f"**SQL Query:**\n```sql\n{result['sql']}\n```")
                         
                         # Add analytics info

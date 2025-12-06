@@ -49,7 +49,7 @@ You are an expert intent classifier for warehouse management systems. Analyze th
    - Examples: "What tables are in the database?", "Show database schema", "List all columns", "Describe table structure"
 
 4. **inventory_analytics**: Stock cover days analysis - how many days of inventory remaining based on sales velocity
-   - Examples: "Calculate stock cover days", "Show products with stock cover less than 30 days", "Top 10 products with lowest stock cover", "Show critical items", "Which products are running low", "Products with low coverage", "Stock cover analysis"
+   - Examples: "Calculate stock cover days", "Show products with stock cover less than 30 days", "Top 10 products with lowest stock cover", "Show critical items", "Which products are running low", "Products with low coverage", "Stock cover analysis", "Inventory turnover rate", "Calculate stock rotation"
 
 **Important Guidelines:**
 - Focus on the user's INTENT, not just keywords
@@ -58,6 +58,7 @@ You are an expert intent classifier for warehouse management systems. Analyze th
 - "Display" usually means visualize when referring to charts/graphs
 - Questions about "stock cover", "days of stock", "coverage" are ALWAYS inventory_analytics (not query)
 - Questions about "restock", "replenish", "critical", "warning" are inventory_analytics
+- Questions about "turnover", "rotation", "velocity" are inventory_analytics
 - Simple filters like "products WHERE price > 100" = query
 - Complex metrics like "stock cover < 30 days" = inventory_analytics
 

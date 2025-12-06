@@ -376,8 +376,9 @@ class AnalyticsAgent:
                 THEN ROUND(COALESCE(sp.total_sales_qty, 0) / i.current_inventory_quantity, 2)
                 ELSE 0 
             END AS turnover_ratio,
+
             CASE 
-                WHEN COALESCE(sp.total_sales_qty, 0) > 0
+                WHEN COALESCE(sp.total_sales_qty, 0) > 0 AND i.current_inventory_quantity > 0
                 THEN ROUND({period_days} / (COALESCE(sp.total_sales_qty, 0) / i.current_inventory_quantity), 2)
                 ELSE NULL
             END AS days_to_sell_inventory,
@@ -433,23 +434,15 @@ You are an inventory analytics expert. Generate a concise, actionable summary ba
 {summary_stats['sample_data']}
 
 **Instructions:**
+**Instructions:**
 1. Provide a 2-3 sentence executive summary
-2. Highlight the most critical insights (top 3)
-3. If applicable, mention urgent actions needed
-4. Keep it concise and business-focused
-5. Use emojis for visual clarity (🚨 critical, ⚠️ warning, ✅ good, 📊 stats)
+2. Focus on the most critical findings
+3. Keep it concise and business-focused
+4. Use emojis for visual clarity (🚨 critical, ⚠️ warning, ✅ good, 📊 stats)
 
 **Format:**
 Executive Summary:
 [Your summary here]
-
-Key Insights:
-- [Insight 1]
-- [Insight 2]
-- [Insight 3]
-
-Recommended Actions:
-- [Action 1 if applicable]
 """
         
         try:
