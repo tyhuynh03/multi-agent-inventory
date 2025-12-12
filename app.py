@@ -3,6 +3,9 @@ import time
 import datetime
 import json
 import pickle
+import re
+import textwrap
+import base64
 from html import escape
 import streamlit as st
 import streamlit.components.v1
@@ -29,10 +32,15 @@ except Exception:
 
 load_dotenv()
 
-st.set_page_config(page_title="Multi-Agent for Inventory", layout="wide")
+# Page icon (Streamlit logo) -> use Logo_RG.png if available
+logo_rg_path = os.path.abspath("assets/logo_rg.png")
+page_icon_path = logo_rg_path if os.path.exists(logo_rg_path) else None
+
+st.set_page_config(page_title="Multi-Agent for Inventory", layout="wide", page_icon=page_icon_path)
 
 # Config flags
-LOAD_SAVED_CHARTS = False  # Tạm thời bỏ load chart từ conversation/segments
+# Bật load chart đã lưu để khi refresh vẫn hiển thị chart
+LOAD_SAVED_CHARTS = True
 
 # Initialize session state for chat history
 if "messages" not in st.session_state:
@@ -65,21 +73,24 @@ def load_conversation():
                 if LOAD_SAVED_CHARTS:
                     charts = []
                     for chart_data in data.get("charts", []):
-                        if "chart_png_base64" in chart_data:
-                            try:
-                                import base64
-                                png_bytes = base64.b64decode(chart_data["chart_png_base64"])
-                                charts.append({
-                                    "question": chart_data.get("question", ""),
-                                    "chart": None,
-                                    "chart_png": png_bytes,
-                                    "timestamp": chart_data.get("timestamp", time.time())
-                                })
-                            except Exception as e:
-                                st.warning(f"Could not load chart PNG: {e}")
-                                continue
+                        try:
+                            import plotly.io as pio
+                            chart_obj = None
+                            if "chart_json" in chart_data:
+                                try:
+                                    chart_obj = pio.from_json(chart_data["chart_json"])
+                                except Exception as e:
+                                    st.warning(f"Could not load chart JSON: {e}")
+                            charts.append({
+                                "question": chart_data.get("question", ""),
+                                "chart": chart_obj,
+                                "chart_png": None,
+                                "timestamp": chart_data.get("timestamp", time.time())
+                            })
+                        except Exception as e:
+                            st.warning(f"Could not load chart: {e}")
+                            continue
                     st.session_state.charts = charts
-                    st.success(f"✅ Loaded {len(charts)} charts from conversation")
                 else:
                     st.session_state.charts = []
                 return True
@@ -103,20 +114,22 @@ def save_conversation():
         # Convert charts to serializable format (PNG images)
         serializable_charts = []
         for chart_data in st.session_state.get("charts", []):
-            if chart_data and "chart_png" in chart_data:
+            if chart_data:
                 try:
-                    import base64
-                    # Convert PNG bytes to base64 string for JSON storage
-                    if chart_data["chart_png"]:
-                        png_base64 = base64.b64encode(chart_data["chart_png"]).decode('utf-8')
-                        serializable_chart = {
-                            "question": chart_data.get("question", ""),
-                            "chart_png_base64": png_base64,
-                            "timestamp": chart_data.get("timestamp", time.time())
-                        }
-                        serializable_charts.append(serializable_chart)
+                    import plotly.io as pio
+                    serializable_chart = {
+                        "question": chart_data.get("question", ""),
+                        "timestamp": chart_data.get("timestamp", time.time())
+                    }
+                    # Lưu JSON của plotly figure (ưu tiên)
+                    if chart_data.get("chart") is not None:
+                        try:
+                            serializable_chart["chart_json"] = pio.to_json(chart_data["chart"])
+                        except Exception as e:
+                            st.warning(f"Could not serialize chart JSON: {e}")
+                    serializable_charts.append(serializable_chart)
                 except Exception as e:
-                    st.warning(f"Could not serialize chart PNG: {e}")
+                    st.warning(f"Could not serialize chart: {e}")
                     continue
         
         data = {
@@ -181,23 +194,32 @@ def load_chat_segments():
             st.info("No chat segments found")
             return
         
-        # Display segments
+        # Display segments as dropdown/expander; controls only when expanded
         for i, filename in enumerate(segment_files):
             try:
                 with open(f"data/chat_segments/{filename}", "r", encoding="utf-8") as f:
                     segment_data = json.load(f)
                 
-                # Compact display for sidebar
-                with st.expander(f"📁 {segment_data.get('name', filename)}", expanded=False):
-                    st.caption(f"Created: {segment_data.get('created_at', 'Unknown')}")
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("📂 Load", key=f"load_{i}", use_container_width=True):
+                segment_name = segment_data.get('name', filename.replace('.json', ''))
+                with st.expander(segment_name, expanded=False):
+                    col_load, col_delete = st.columns([1, 1])
+                    with col_load:
+                        if st.button("📂 Load", key=f"load_segment_{i}", width="stretch"):
                             load_chat_segment(filename)
-                    with col2:
-                        if st.button("🗑️", key=f"delete_{i}", use_container_width=True):
+                    with col_delete:
+                        if st.button("🗑️ Delete", key=f"delete_segment_{i}", width="stretch"):
                             delete_chat_segment(filename)
+                    
+                    # Inline rename input (full width, centered text)
+                    new_name = st.text_input(
+                        "Rename:",
+                        value=segment_name,
+                        key=f"rename_input_{i}",
+                        label_visibility="visible",
+                    )
+                    if st.button("✓ Rename", key=f"rename_confirm_{i}", width="stretch"):
+                        if new_name.strip() and new_name.strip() != segment_name:
+                            rename_chat_segment(filename, new_name.strip())
                 
             except Exception as e:
                 st.error(f"Error loading segment {filename}: {e}")
@@ -211,9 +233,25 @@ def load_chat_segment(filename):
         with open(f"data/chat_segments/{filename}", "r", encoding="utf-8") as f:
             segment_data = json.load(f)
         
-        # Load messages and charts
+        # Load messages and charts (rehydrate plotly figures from JSON)
         st.session_state.messages = segment_data.get("messages", [])
-        st.session_state.charts = segment_data.get("charts", [])
+        charts_loaded = []
+        for chart_item in segment_data.get("charts", []):
+            chart_obj = None
+            try:
+                import plotly.io as pio
+                if chart_item.get("chart_json"):
+                    chart_obj = pio.from_json(chart_item["chart_json"])
+            except Exception as e:
+                st.warning(f"Could not load chart from segment: {e}")
+            charts_loaded.append({
+                "question": chart_item.get("question", ""),
+                "chart": chart_obj,
+                "chart_png": None,
+                "chart_json": chart_item.get("chart_json"),
+                "timestamp": chart_item.get("timestamp", time.time())
+            })
+        st.session_state.charts = charts_loaded
         
         st.success(f"✅ Loaded chat segment: {segment_data.get('name', filename)}")
         st.rerun()
@@ -230,49 +268,375 @@ def delete_chat_segment(filename):
     except Exception as e:
         st.error(f"Error deleting chat segment: {e}")
 
-# Typography tweak for better readability
-st.markdown(
-    """
-    <style>
+def rename_chat_segment(filename, new_name):
+    """Rename a chat segment"""
+    try:
+        # Read current segment data
+        with open(f"data/chat_segments/{filename}", "r", encoding="utf-8") as f:
+            segment_data = json.load(f)
+        
+        # Update name
+        segment_data["name"] = new_name.strip()
+        
+        # Create new filename
+        new_filename = f"{new_name.strip().replace(' ', '_')}.json"
+        new_filepath = f"data/chat_segments/{new_filename}"
+        
+        # Save with new name
+        with open(new_filepath, "w", encoding="utf-8") as f:
+            json.dump(segment_data, f, ensure_ascii=False, indent=2)
+        
+        # Delete old file if filename changed
+        if filename != new_filename:
+            os.remove(f"data/chat_segments/{filename}")
+        
+        st.success(f"✅ Renamed to '{new_name.strip()}'")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Error renaming chat segment: {e}")
+
+        
+def markdown_to_html(text: str) -> str:
+    """Convert markdown to HTML, fallback with basic replacements."""
+    if text is None:
+        return ""
+    try:
+        import markdown as md
+        return md.markdown(str(text), extensions=["extra", "sane_lists"])
+    except Exception:
+        escaped = escape(str(text))
+        escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+        escaped = re.sub(r"(?m)^- (.+)$", r"<ul><li>\1</li></ul>", escaped)
+        return escaped.replace("\n", "<br>")
+
+
+def sanitize_html(raw: str) -> str:
+    """Escape script/style tags to prevent rendering."""
+    if raw is None:
+        return ""
+    cleaned = re.sub(
+        r"<\s*(script|style)(.|\n)*?<\s*/\s*\1\s*>",
+        lambda m: escape(m.group(0)),
+        str(raw),
+        flags=re.IGNORECASE,
+    )
+    return cleaned
+
+
+def get_sql_text(obj: dict) -> str:
+    """Extract SQL text from result/message with multiple possible keys."""
+    if not obj or not isinstance(obj, dict):
+        return None
+    for key in ("sql", "generated_sql", "sql_query", "query_sql"):
+        val = obj.get(key)
+        if val:
+            return str(val)
+    return None
+
+
+st.markdown(textwrap.dedent("""
+<style>
+
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    /* Apply Inter font to specific elements only */
-    .stTextInput input,
-    .stTextArea textarea,
-    .stSelectbox select,
-    .stButton button,
-    .stMarkdown,
-    .stWrite {
-        font-family: 'Inter', sans-serif !important;
+
+    /* Tăng cỡ chữ tổng thể */
+    :root { font-size: 17px; }
+    body, [data-testid="stAppViewContainer"] .main {
+        font-size: 17px;
+        line-height: 1.6;
+    }
+    /* Form controls to 16px cho gọn */
+    input, textarea, button, select, label, .stMarkdown, .stTextInput, .stTextArea {
+        font-size: 16px !important;
     }
     
+/* ---------------------------------------------------
+   FIX INPUT BAR — ALWAYS ON TOP, RESPONSIVE
+--------------------------------------------------- */
+div[data-testid="stChatInput"] {
+    position: fixed !important;
+    bottom: 24px !important;  /* cách đáy một khoảng hợp lý */
+    z-index: 999 !important;
+    display: flex !important;
+    justify-content: center;
+    background: transparent !important;
+    padding: 0 1.5cm !important;  /* chừa lề hai bên ~1.5cm */
+    width: clamp(1300px, 95vw, 1900px) !important;  /* mặc định khi sidebar mở */
+    box-sizing: border-box !important;
+}
+
+div[data-testid="stChatInput"] > div {
+    margin: 0 auto !important;  /* luôn căn giữa thanh input */
+}
+
+
+
+/* Giữ nội dung không bị che */
+[data-testid="stAppViewContainer"] .main .block-container {
+    padding-top: 8px !important;   /* giảm khoảng trống đầu trang */
+    padding-bottom: 150px !important;
+}
+
+/* ---------------------------------------------------
+   CHAT BUBBLES 
+--------------------------------------------------- */
+    /* Preserve bubble-specific colors */
+    .chat-bubble.user { color: var(--chat-user-text) !important; }
+    .chat-bubble.assistant { color: var(--chat-assistant-text) !important; }
+    .chat-bubble code, .chat-bubble pre { color: inherit !important; }
     .summary-text { 
         font-size: 15px; 
         line-height: 1.6; 
-        font-family: 'Inter', sans-serif; 
+    font-family: 'Inter', 
+    sans-serif; 
         white-space: pre-wrap;
     }
     
-    /* Fix text input rendering */
-    .stTextInput input {
-        font-family: 'Inter', sans-serif !important;
-        font-size: 16px !important;
-        line-height: 1.5 !important;
-        letter-spacing: normal !important;
-        text-rendering: optimizeLegibility !important;
+/* COMMON BUBBLE SETTINGS */
+[data-testid="stChatMessage"] {
+    margin: 8px 0 !important;
+        display: flex !important;
+        width: 100% !important;
     }
     
-    /* Fix any overlapping text issues */
-    .stTextInput input::placeholder {
-        font-family: 'Inter', sans-serif !important;
-        opacity: 0.6 !important;
+/* USER (BÊN PHẢI) */
+[data-testid="stChatMessage"][data-message-author="user"] {
+    justify-content: flex-end !important;
+    flex-direction: row !important; /* bubble trước, avatar bên phải */
+}
+
+[data-testid="stChatMessage"][data-message-author="user"] [data-testid="stChatAvatar"] {
+    background: #1d4ed8 !important;
+    color: white !important;
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+}
+
+[data-testid="stChatMessage"][data-message-author="user"] [data-testid="stChatMessageContent"] {
+    background: #2b7bff !important;
+    color: white !important;
+    padding: 12px 14px !important;
+    border-radius: 16px 16px 4px 16px !important;
+    max-width: 45% !important; /* hẹp lại giống ảnh */
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    word-break: break-word;
+    margin-left: auto !important; /* dồn sát phải */
+}
+
+/* DARK MODE USER */
+@media (prefers-color-scheme: dark) {
+    [data-testid="stChatMessage"][data-message-author="user"] [data-testid="stChatMessageContent"] {
+        background: #1f4e8c !important;
+        color: #e8f0ff !important;
     }
-    </style>
-    """,
+}
+
+/* ASSISTANT (BÊN TRÁI) */
+[data-testid="stChatMessage"][data-message-author="assistant"] {
+    justify-content: flex-start !important;
+    flex-direction: row !important;
+}
+
+[data-testid="stChatMessage"][data-message-author="assistant"] [data-testid="stChatAvatar"] {
+    background: #d1d5db !important; 
+    color: #111 !important;
+    width: 36px !important;
+    height: 36px !important;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    font-weight: 600;
+}
+
+[data-testid="stChatMessage"][data-message-author="assistant"] [data-testid="stChatMessageContent"] {
+    background: #f0f0f0 !important;
+    color: #000 !important;
+    padding: 12px 16px !important;
+    border-radius: 16px 16px 16px 4px !important;
+    max-width: 60% !important;
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+        line-height: 1.5;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    word-break: break-word;
+}
+
+/* ASSISTANT DARK MODE */
+@media (prefers-color-scheme: dark) {
+    [data-testid="stChatMessage"][data-message-author="assistant"] [data-testid="stChatMessageContent"] {
+        background: #303030 !important;
+        color: white !important;
+    }
+    [data-testid="stChatMessage"][data-message-author="assistant"] [data-testid="stChatAvatar"] {
+        background: #4b5563 !important;
+        color: white !important;
+    }
+}
+
+/* ---------------------------------------------------
+   OVERRIDE USING CHAT-ROW / CHAT-BUBBLE CLASSES
+   (đảm bảo so le: user bên phải, assistant bên trái)
+--------------------------------------------------- */
+.chat-row {
+    display: flex !important;
+    width: 100% !important;
+    align-items: flex-end !important;
+    gap: 10px !important;
+    margin: 10px 0 !important;
+}
+.chat-row.user {
+    justify-content: flex-end !important;
+    flex-direction: row !important;  /* bubble trước, avatar sau */
+}
+.chat-row.assistant {
+    justify-content: flex-start !important;
+    flex-direction: row !important;
+    align-items: center !important;
+}
+
+.chat-row.user .chat-bubble.user {
+    background: #2b7bff !important;
+    color: #fff !important;
+    padding: 12px 14px !important;
+    border-radius: 16px 16px 4px 16px !important;
+    max-width: 48% !important;
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    word-break: break-word;
+}
+.chat-row.user .chat-avatar {
+    margin-left: 8px !important;
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 50% !important;
+    background: #303030 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 18px !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+    flex-shrink: 0 !important;
+}
+
+.chat-row.assistant .chat-bubble.assistant {
+    background: #f0f0f0 !important;
+    color: #000 !important;
+    padding: 12px 16px !important;
+    border-radius: 16px 16px 16px 4px !important;
+    max-width: 60% !important;
+    font-family: 'Inter', sans-serif;
+        font-size: 15px;
+    line-height: 1.5;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    word-break: break-word;
+}
+.chat-row.assistant .chat-icon {
+    margin-right: 10px !important;
+    width: 42px !important;
+    height: 42px !important;
+    border-radius: 50% !important;
+    background: #d1d5db !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 20px !important;
+    color: #111 !important;
+    flex-shrink: 0 !important;
+}
+
+@media (prefers-color-scheme: dark) {
+    .chat-row.user .chat-bubble.user { background: #0ea5e9 !important; }
+    .chat-row.user .chat-avatar { background: #0284c7 !important; }
+    .chat-row.assistant .chat-bubble.assistant { background: #DDDDDD !important; color: #000 !important; }
+    .chat-row.assistant .chat-icon { background: #DDDDDD !important; color: #000 !important; }
+}
+
+</style>
+
+"""), unsafe_allow_html=True)
+
+# JS chỉnh width input theo trạng thái sidebar
+st.markdown(textwrap.dedent("""
+<script>
+function adjustChatInputWidth() {
+    const container = document.querySelector('div[data-testid="stChatInput"]');
+    const bar = container ? container.querySelector(':scope > div') : null;
+    const sidebar = document.querySelector('[data-testid="stSidebar"]');
+    if (!container || !bar) return;
+    const sidebarHidden = sidebar && getComputedStyle(sidebar).display === "none";
+    if (sidebarHidden) {
+        bar.style.width = "clamp(1400px, 97vw, 2200px)";
+    } else {
+        bar.style.width = "clamp(1300px, 95vw, 1900px)";
+    }
+
+    // Toggle RG logo overlay when sidebar is hidden
+    const rg = document.getElementById('logo-rg-container');
+    if (rg) {
+        rg.style.display = sidebarHidden ? 'block' : 'none';
+    }
+}
+
+adjustChatInputWidth();
+window.addEventListener('resize', adjustChatInputWidth);
+new MutationObserver(adjustChatInputWidth).observe(document.body, { childList: true, subtree: true });
+</script>
+"""), unsafe_allow_html=True)
+
+
+
+# Main logo centered in main content
+logo_path = os.path.abspath("assets/logo.png")
+logo_cntt_path = os.path.abspath("assets/logo_cntt.png")
+
+# Centered header (logo + title) gọn, sát top
+header_html_parts = []
+if os.path.exists(logo_path):
+    with open(logo_path, "rb") as f:
+        logo_b64 = base64.b64encode(f.read()).decode("utf-8")
+    header_html_parts.append(
+        f"<img src='data:image/png;base64,{logo_b64}' width='320' style='display:block; margin:0 auto 6px auto;' />"
+    )
+header_html_parts.append(
+    "<h1 style='text-align:center; margin:0; padding:0; font-size:30px;'>🤖 Multi-Agent for Inventory</h1>"
+)
+st.markdown(
+    "<div style='text-align:center; margin-top:0; margin-bottom:8px;'>"
+    + "".join(header_html_parts) +
+    "</div>",
     unsafe_allow_html=True,
 )
 
-st.title("🤖 Multi-Agent for Inventory")
+# Sidebar logo CNTT
+with st.sidebar:
+    if os.path.exists(logo_cntt_path):
+        st.image(logo_cntt_path, width=220)
+
+# Overlay logo RG (shows when sidebar collapsed via JS)
+logo_rg_b64 = None
+if os.path.exists(logo_rg_path):
+    with open(logo_rg_path, "rb") as f:
+        logo_rg_b64 = base64.b64encode(f.read()).decode("utf-8")
+    st.markdown(
+        f"""
+        <div id="logo-rg-container" style="display:none; position:fixed; top:16px; left:16px; z-index:1001;">
+            <img src="data:image/png;base64,{logo_rg_b64}" style="width:140px;">
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 # --- Initialize Orchestrator ---
 @st.cache_resource
@@ -280,14 +644,70 @@ def get_orchestrator():
     return OrchestratorAgent(db_type="postgresql")
 
 with st.sidebar:
-    # Display University Logo
-    logo_path = os.path.abspath("assets/logo.png")
-    if os.path.exists(logo_path):
-        st.image(logo_path, width=200)
-    elif os.path.exists("assets/logo1.jpg"):
-        st.image("assets/logo1.jpg", width=200)
-        
-    st.header("📚 Chat Segments")
+    # Save as chat segment
+    st.header("💾 Save Segment")
+    segment_name = st.text_input("Segment name:", value="", placeholder="Enter segment name...", key="save_segment_input")
+    if st.button("💾 Save as Chat Segment", width="stretch", key="save_segment_btn"):
+        if segment_name.strip():
+            # Save with custom name
+            try:
+                if not st.session_state.messages:
+                    st.warning("No conversation to save")
+                else:
+                    # Serialize charts (only JSON) to avoid non-serializable Plotly objects
+                    serializable_charts = []
+                    for chart_data in st.session_state.get("charts", []):
+                        try:
+                            import plotly.io as pio
+                            chart_json = chart_data.get("chart_json")
+                            if not chart_json and chart_data.get("chart") is not None:
+                                chart_json = pio.to_json(chart_data["chart"])
+                            serializable_charts.append({
+                                "question": chart_data.get("question", ""),
+                                "chart_json": chart_json,
+                                "timestamp": chart_data.get("timestamp", time.time())
+                            })
+                        except Exception as e:
+                            st.warning(f"Could not serialize chart for segment: {e}")
+                            continue
+
+                    segment_data = {
+                        "name": segment_name.strip(),
+                        "messages": st.session_state.messages,
+                        "charts": serializable_charts,
+                        "timestamp": time.time(),
+                        "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    
+                    os.makedirs("data/chat_segments", exist_ok=True)
+                    filename = f"data/chat_segments/{segment_name.strip().replace(' ', '_')}.json"
+                    with open(filename, "w", encoding="utf-8") as f:
+                        json.dump(segment_data, f, ensure_ascii=False, indent=2)
+                    
+                    st.success(f"✅ Chat segment '{segment_name.strip()}' saved!")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Error saving chat segment: {e}")
+        else:
+            save_chat_segment()
+    
+    st.divider()
+    
+    # Chat Segments header with Clear button on the same row
+    col_segments, col_clear = st.columns([3, 1])
+    with col_segments:
+        st.header("📚 Chat Segments")
+    with col_clear:
+        if st.button("🗑️", width="stretch", help="Clear chat history", key="clear_chat_btn"):
+            st.session_state.messages = []
+            st.session_state.charts = []
+            # Clear conversation file
+            if os.path.exists("data/conversation.json"):
+                try:
+                    os.remove("data/conversation.json")
+                except:
+                    pass
+            st.rerun()
     
     # Load chat segments
     load_chat_segments()
@@ -312,78 +732,31 @@ with st.sidebar:
     
     st.divider()
     
-    # Save as chat segment
-    segment_name = st.text_input("Segment name:", value="", placeholder="Enter segment name...")
-    if st.button("💾 Save as Chat Segment", use_container_width=True):
-        if segment_name.strip():
-            # Save with custom name
-            try:
-                if not st.session_state.messages:
-                    st.warning("No conversation to save")
+    # Button Check DB
+    if st.button("Check DB", width="stretch", key="check_db_btn"):
+        try:
+            if db_type == "postgresql":
+                # Test PostgreSQL connection
+                df, error = run_sql_unified("SELECT COUNT(*) as table_count FROM information_schema.tables WHERE table_schema = 'public'", "postgresql")
+                if error:
+                    st.error(f"PostgreSQL error: {error}")
                 else:
-                    segment_data = {
-                        "name": segment_name.strip(),
-                        "messages": st.session_state.messages,
-                        "charts": st.session_state.get("charts", []),
-                        "timestamp": time.time(),
-                        "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
-                    }
-                    
-                    os.makedirs("data/chat_segments", exist_ok=True)
-                    filename = f"data/chat_segments/{segment_name.strip().replace(' ', '_')}.json"
-                    with open(filename, "w", encoding="utf-8") as f:
-                        json.dump(segment_data, f, ensure_ascii=False, indent=2)
-                    
-                    st.success(f"✅ Chat segment '{segment_name.strip()}' saved!")
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Error saving chat segment: {e}")
-        else:
-            save_chat_segment()
-            
-    st.divider()
-    
-    # Clear chat button moved to main area
-    pass
-    
-    # Button Check DB & Clear Chat (Side-by-side)
-    col_check, col_clear = st.columns(2)
-    
-    with col_check:
-        if st.button("Check DB", use_container_width=True):
-            try:
-                if db_type == "postgresql":
-                    # Test PostgreSQL connection
-                    df, error = run_sql_unified("SELECT COUNT(*) as table_count FROM information_schema.tables WHERE table_schema = 'public'", "postgresql")
-                    if error:
-                        st.error(f"PostgreSQL error: {error}")
-                    else:
-                        st.success("✅ Connected!")
-                        # Get table names
-                        df_tables, _ = run_sql_unified("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name", "postgresql")
-                        st.write("Tables:")
-                        st.code(df_tables['table_name'].tolist(), language="bash")
-                else:
-                    db = get_db(db_path, "sqlite")
-                    st.success("✅ Connected. Tables:")
-                    st.code(db.get_usable_table_names(), language="bash")
-            except Exception as e:
-                st.error(f"DB error: {e}")
-                
-    with col_clear:
-        if st.button("🗑️ Clear", use_container_width=True, help="Clear chat history"):
-            st.session_state.messages = []
-            st.session_state.charts = []
-            # Clear conversation file
-            if os.path.exists("data/conversation.json"):
-                try:
-                    os.remove("data/conversation.json")
-                except:
-                    pass
-            st.rerun()
+                    st.success("✅ Connected!")
+                    # Get table names
+                    df_tables, _ = run_sql_unified("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name", "postgresql")
+                    st.write("Tables:")
+                    # Display table names with proper formatting for sidebar
+                    table_list = df_tables['table_name'].tolist()
+                    st.code(str(table_list), language="bash")
+            else:
+                db = get_db(db_path, "sqlite")
+                st.success("✅ Connected. Tables:")
+                st.code(db.get_usable_table_names(), language="bash")
+        except Exception as e:
+            st.error(f"DB error: {e}")
     
     # Button dưới
-    if st.button("🔄 Rebuild RAG Index", use_container_width=True):
+    if st.button("🔄 Rebuild RAG Index", width="stretch"):
         try:
             from rag.rag_retriever import get_rag_retriever
             rag_agent = get_rag_retriever()
@@ -407,56 +780,90 @@ with tab_text2sql:
     # Create container for chat messages
     chat_container = st.container()
     
-    # Display chat history in the container
+    def render_chat_bubble(content_html: str, role: str):
+        content_html = sanitize_html(content_html)
+        if role == "assistant":
+            target = st.container()
+            with target:
+                wrapper_open = "<div class='chat-row assistant'><div class='chat-icon'>🤖</div><div class='chat-bubble assistant'>"
+                wrapper_close = "</div></div>"
+                st.markdown(f"{wrapper_open}{content_html}{wrapper_close}", unsafe_allow_html=True)
+            return target
+        else:
+            target = st.container()
+            with target:
+                wrapper_open = "<div class='chat-row user'><div class='chat-bubble user'>"
+                wrapper_close = "</div><div class='chat-avatar'>🙂</div></div>"
+                st.markdown(f"{wrapper_open}{content_html}{wrapper_close}", unsafe_allow_html=True)
+            return target
+
+    def render_assistant_table(df: pd.DataFrame, title: str = "📊 Query Results"):
+        col_left, _ = st.columns([1, 1])
+        with col_left:
+            st.markdown(
+                f"<div class='bubble-box assistant'><div class='bubble-title'>{title}</div>",
+                unsafe_allow_html=True,
+            )
+            st.dataframe(df, width="stretch")
+            st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Display chat history in the container with custom layout (messenger style)
     with chat_container:
         for i, message in enumerate(st.session_state.messages):
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-                
-                # Display data table if this message has cached data
-                if "data" in message and message["data"] and len(message["data"]) > 0:
-                    try:
-                        df = pd.DataFrame(message["data"])
-                        # Ensure columns match original
-                        if "data_columns" in message:
-                            df = df[message["data_columns"]]
-                        
-                        st.markdown("**📊 Query Results:**")
-                        st.dataframe(df, use_container_width=True)
-                        
-                        row_count = message.get("row_count", len(df))
-                        if message.get("has_full_data", True):
-                            st.caption(f"📈 Total rows: {row_count}")
-                        else:
-                            st.caption(f"📈 Showing {len(df)} of {row_count} rows (sample)")
-                            st.info("💡 Tip: Re-run query to see full results")
-                    except Exception as e:
-                        st.warning(f"Could not display cached data: {e}")
-                
-                # Display chart if this message has a chart
-                if "chart_index" in message and "charts" in st.session_state:
-                    chart_index = message["chart_index"]
-                    if chart_index < len(st.session_state.charts):
-                        chart_data = st.session_state.charts[chart_index]
-                        if chart_data:
-                            st.subheader("📊 Visualization")
-                            try:
-                                # Try to display as Plotly figure first (for new charts)
-                                if "chart" in chart_data and chart_data["chart"] is not None:
-                                    st.plotly_chart(chart_data["chart"], use_container_width=True)
-                                # Display PNG image (for loaded charts)
-                                elif "chart_png" in chart_data and chart_data["chart_png"]:
-                                    # Display with better quality and layout preservation
-                                    st.image(
-                                        chart_data["chart_png"], 
-                                        caption=chart_data.get("question", "Chart"), 
-                                        use_container_width=True,
-                                        channels="RGB"  # Ensure proper color channels
-                                    )
-                                else:
-                                    st.info("📊 Chart was saved but cannot be displayed")
-                            except Exception as e:
-                                st.error(f"Error displaying chart: {e}")
+            is_user = message.get("role") == "user"
+            target_col = render_chat_bubble(message.get("content", ""), "user" if is_user else "assistant")
+            
+            # Hiển thị SQL đã lưu trong bubble nếu có
+            sql_text_hist = get_sql_text(message) if not is_user else None
+            if sql_text_hist:
+                sql_html = (
+                    f"<div class='summary-text'><strong>SQL Query:</strong><br>"
+                    f"<pre><code>{escape(sql_text_hist)}</code></pre></div>"
+                )
+                render_chat_bubble(sql_html, "assistant")
+            # Display data table if this message has cached data
+            if "data" in message and message["data"] and len(message["data"]) > 0:
+                try:
+                    df = pd.DataFrame(message["data"])
+                    # Ensure columns match original
+                    if "data_columns" in message:
+                        df = df[message["data_columns"]]
+                    st.markdown(f"<div class='chat-results-title {'user' if is_user else 'assistant'}'>📊 Query Results</div>", unsafe_allow_html=True)
+                    st.dataframe(df, width="stretch")
+                    
+                    row_count = message.get("row_count", len(df))
+                    if message.get("has_full_data", True):
+                        st.caption(f"📈 Total rows: {row_count}")
+                    else:
+                        st.caption(f"📈 Showing {len(df)} of {row_count} rows (sample)")
+                        st.info("💡 Tip: Re-run query to see full results")
+                except Exception as e:
+                    st.warning(f"Could not display cached data: {e}")
+            
+            # Display chart if this message has a chart
+            if "chart_index" in message and "charts" in st.session_state:
+                chart_index = message["chart_index"]
+                if chart_index < len(st.session_state.charts):
+                    chart_data = st.session_state.charts[chart_index]
+                    if chart_data:
+                        st.subheader("📊 Visualization")
+                        try:
+                            # Try to display as Plotly figure first (for new charts)
+                            if "chart" in chart_data and chart_data["chart"] is not None:
+                                st.plotly_chart(chart_data["chart"], width="stretch")
+                            # Display PNG image (for loaded charts)
+                            elif "chart_png" in chart_data and chart_data["chart_png"]:
+                                # Display with better quality and layout preservation
+                                st.image(
+                                    chart_data["chart_png"], 
+                                    caption=chart_data.get("question", "Chart"), 
+                                    width="stretch",
+                                    channels="RGB"  # Ensure proper color channels
+                                )
+                            else:
+                                st.info("📊 Chart was saved but cannot be displayed")
+                        except Exception as e:
+                            st.error(f"Error displaying chart: {e}")
     
     
     # Chat input at the bottom
@@ -464,13 +871,9 @@ with tab_text2sql:
         # Add user message to chat history
         st.session_state.messages.append({"role": "user", "content": question})
         
-        # Auto-save conversation
-        save_conversation()
-        
-        # Display user message in chat container
+        # Display user message in chat container (custom bubble)
         with chat_container:
-            with st.chat_message("user"):
-                st.markdown(question)
+            render_chat_bubble(question, "user")
         
         # Process with agent
         if not question.strip():
@@ -493,42 +896,43 @@ with tab_text2sql:
                 # Display assistant response in chat container
                 with chat_container:
                     if not result["success"]:
-                        with st.chat_message("assistant"):
-                            st.error(f"❌ {result['error']}")
-                            # Technical details for error case
-                            with st.expander("⚙️ Technical Details", expanded=False):
-                                # Show SQL if available
-                                if "sql" in result and result["sql"]:
-                                    st.markdown("**Generated SQL:**")
-                                    st.code(result["sql"], language="sql")
-                                # Optional debug sections
-                                if "debug" in result and isinstance(result["debug"], dict):
-                                    steps = result["debug"].get("steps") or []
-                                    if steps:
-                                        with st.expander("Steps", expanded=False):
-                                            st.json(steps)
-                                    gen = result["debug"].get("sql_generate") or {}
-                                    if gen:
-                                        model = gen.get("model")
-                                        if model:
-                                            st.caption(f"Model: {model}")
-                                        prompt_full = gen.get("prompt_full")
-                                        prompt_snippet = gen.get("prompt_snippet")
-                                        raw_response = gen.get("raw_response")
-                                        retry = gen.get("retry")
-                                        if prompt_full:
-                                            with st.expander("Prompt (full)", expanded=False):
-                                                st.code(prompt_full, language="markdown")
-                                        elif prompt_snippet:
-                                            with st.expander("Prompt snippet", expanded=False):
-                                                st.code(prompt_snippet, language="markdown")
-                                        if raw_response:
-                                            with st.expander("LLM raw response", expanded=False):
-                                                st.code(raw_response, language="markdown")
-                                        if retry:
-                                            st.caption("Retried: True")
-                            # Add error to chat history
-                            st.session_state.messages.append({"role": "assistant", "content": f"❌ Error: {result['error']}"})
+                        render_chat_bubble(f"❌ {result['error']}", "assistant")
+                        # Technical details for error case
+                        with st.expander("⚙️ Technical Details", expanded=False):
+                            # Show SQL if available
+                            if "sql" in result and result["sql"]:
+                                st.markdown("**Generated SQL:**")
+                                st.code(result["sql"], language="sql")
+                            # Optional debug sections
+                            if "debug" in result and isinstance(result["debug"], dict):
+                                steps = result["debug"].get("steps") or []
+                                if steps:
+                                    with st.expander("Steps", expanded=False):
+                                        st.json(steps)
+                                gen = result["debug"].get("sql_generate") or {}
+                                if gen:
+                                    model = gen.get("model")
+                                    if model:
+                                        st.caption(f"Model: {model}")
+                                    prompt_full = gen.get("prompt_full")
+                                    prompt_snippet = gen.get("prompt_snippet")
+                                    raw_response = gen.get("raw_response")
+                                    retry = gen.get("retry")
+                                    if prompt_full:
+                                        with st.expander("Prompt (full)", expanded=False):
+                                            st.code(prompt_full, language="markdown")
+                                    elif prompt_snippet:
+                                        with st.expander("Prompt snippet", expanded=False):
+                                            st.code(prompt_snippet, language="markdown")
+                                    if raw_response:
+                                        with st.expander("LLM raw response", expanded=False):
+                                            st.code(raw_response, language="markdown")
+                                    if retry:
+                                        st.caption("Retried: True")
+                        # Add error to chat history
+                        st.session_state.messages.append({"role": "assistant", "content": f"❌ Error: {result['error']}"})
+                        # Auto-save conversation (error case)
+                        save_conversation()
                     else:
                         # Technical details shown between user and assistant reply
                         with st.expander("⚙️ Technical Details", expanded=False):
@@ -580,20 +984,16 @@ with tab_text2sql:
                             if "schema_info" in result and result["schema_info"]:
                                 st.markdown(result["schema_info"])
                             elif result["data"] is not None:
-                                st.dataframe(result["data"], use_container_width=True)
+                                st.dataframe(result["data"], width="stretch")
                                 st.caption(f"Rows: {len(result['data'])}")
 
-                        # Build response content (no markdown table, only Query Results table)
+                        # Build response content (no SQL inside bubble)
                         response_parts = []
                         
                         # Add natural language summary if available
                         if "response" in result and result["response"]:
-                            safe_text = escape(str(result["response"]))
-                            response_parts.append(f"<div class='summary-text'>{safe_text}</div>")
-                        
-                        # Add SQL query (if available) - Hide for visualization
-                        if "sql" in result and result["sql"] and result.get("intent") != "visualize":
-                            response_parts.append(f"**SQL Query:**\n```sql\n{result['sql']}\n```")
+                            resp_html = markdown_to_html(str(result["response"]))
+                            response_parts.append(f"<div class='summary-text'>{resp_html}</div>")
                         
                         # Add analytics info
                         if result.get("intent") == "inventory_analytics" and result.get("analytics_type"):
@@ -608,18 +1008,29 @@ with tab_text2sql:
                                 summary_text += f", {summary['total_products']} products"
                             response_parts.append(summary_text)
                         
-                        # Display response content (no markdown table)
-                        full_response = "\n\n".join(response_parts)
-                        assistant_history_content = full_response  # No response_table_md
-                        with st.chat_message("assistant"):
-                            st.markdown(assistant_history_content, unsafe_allow_html=True)
-                            st.caption(f"⏱️ Processed in {duration:.2f}s")
-                            
-                            # Display main data table in chat (skip for visualize intent)
-                            if result["data"] is not None and not result["data"].empty and result.get("intent") != "visualize":
-                                st.markdown("**📊 Query Results:**")
-                                st.dataframe(result["data"], use_container_width=True)
-                                st.caption(f"📈 Total rows: {len(result['data'])}")
+                        # Fallback nếu không có response nào
+                        if not response_parts:
+                            response_parts.append("See the chart below:")
+                        
+                        assistant_history_content = "\n\n".join(response_parts)
+                        # Bubble 1: summary/analytics
+                        render_chat_bubble(assistant_history_content, "assistant")
+                        
+                        # Bubble 2: SQL (nếu có và không phải visualize)
+                        sql_text = get_sql_text(result)
+                        if sql_text and result.get("intent") != "visualize":
+                            sql_html = (
+                                f"<div class='summary-text'><strong>SQL Query:</strong><br>"
+                                f"<pre><code>{escape(sql_text)}</code></pre></div>"
+                            )
+                            render_chat_bubble(sql_html, "assistant")
+                        
+                        # Bubble 3: main data table (if any)
+                        if result["data"] is not None and not result["data"].empty and result.get("intent") != "visualize":
+                            render_assistant_table(result["data"])
+                            st.caption(f"📈 Total rows: {len(result['data'])}")
+                        
+                        st.caption(f"⏱️ Processed in {duration:.2f}s")
                         
                         # Prepare message content - include data for persistence
                         message_content = {
@@ -649,8 +1060,8 @@ with tab_text2sql:
                                 message_content["row_count"] = len(result["data"]) if not result["data"].empty else 0
                         
                         # Save SQL query for reference
-                        if result.get("sql"):
-                            message_content["sql"] = result["sql"]
+                        if sql_text:
+                            message_content["sql"] = sql_text
                         
                         # Display chart if available
                         if "chart" in result and result["chart"]:
@@ -659,47 +1070,24 @@ with tab_text2sql:
                                 import plotly.graph_objects as go
                                 import plotly.io as pio
                                 from streamlit import plotly_chart
-                                st.plotly_chart(result["chart"], use_container_width=True)
-                                
+                                st.plotly_chart(result["chart"], width="stretch")
+
                                 # Save chart as PNG for persistence
                                 if "charts" not in st.session_state:
                                     st.session_state.charts = []
                                 chart_index = len(st.session_state.charts)
-                                
-                                # Use Plotly's built-in download functionality for PNG
-                                try:
-                                    import plotly.io as pio
-                                    # Use the same method as Plotly's download button
-                                    png_bytes = pio.to_image(
-                                        result["chart"], 
-                                        format="png",
-                                        width=800,  # Fixed width for consistency
-                                        height=600, # Fixed height for consistency
-                                        scale=1,    # Use default scale like download button
-                                        engine="kaleido"
-                                    )
-                                    chart_png = png_bytes
-                                except ImportError:
-                                    st.info("📊 Chart displayed successfully. Install 'kaleido' for PNG export.")
-                                    chart_png = None
-                                except Exception as e:
-                                    # More specific error handling
-                                    if "kaleido" in str(e).lower():
-                                        st.info("📊 Chart displayed successfully. Run: pip install kaleido")
-                                    else:
-                                        st.warning(f"Chart PNG export failed: {str(e)[:100]}")
-                                    chart_png = None
-                                
+
                                 st.session_state.charts.append({
                                     "question": question,
                                     "chart": result["chart"],  # Keep original for display
-                                    "chart_png": chart_png,   # PNG bytes for persistence
+                                    "chart_png": None,   # PNG bytes (không lưu)
+                                    "chart_json": pio.to_json(result["chart"]) if result.get("chart") is not None else None,
                                     "timestamp": time.time()
                                 })
-                                
+
                                 # Add chart index to message
                                 message_content["chart_index"] = chart_index
-                                
+
                             except Exception as e:
                                 # If it's a Plotly figure, we shouldn't try st.pyplot
                                 is_plotly = False
@@ -709,7 +1097,7 @@ with tab_text2sql:
                                         is_plotly = True
                                 except:
                                     pass
-                                
+
                                 if is_plotly:
                                     st.error(f"Error displaying Plotly chart: {e}")
                                 else:
@@ -721,7 +1109,7 @@ with tab_text2sql:
                         # Add to chat history
                         st.session_state.messages.append(message_content)
                         
-                        # Auto-save conversation
+                        # Auto-save conversation (success case, after assistant + chart saved)
                         save_conversation()
                         
                         # Debug info (timings, intent, viz spec)
@@ -760,7 +1148,7 @@ with tab_sql_console:
                     st.subheader("Results")
                     st.code(sql_text, language="sql")
                     
-                    st.dataframe(df, use_container_width=True)
+                    st.dataframe(df, width="stretch")
                     st.caption(f"Rows: {len(df)}")
             except Exception as e:
                 st.error(str(e))
