@@ -45,24 +45,28 @@ You are an expert intent classifier for warehouse management systems. Analyze th
 2. **visualize**: Requests for charts, graphs, plots, or visual representations of data
    - Examples: "Show inventory trend chart", "Display sales chart over time", "Create a graph of inventory levels", "Plot demand vs supply", "Visualize data"
 
-3. **report**: Requests for comprehensive reports, summaries, or formatted business documents
-   - Examples: "Generate low stock report", "Create monthly summary", "Business performance report", "Inventory analysis report"
-
-4. **schema**: Questions about database structure, tables, columns, or data organization
+3. **schema**: Questions about database structure, tables, columns, or data organization
    - Examples: "What tables are in the database?", "Show database schema", "List all columns", "Describe table structure"
+
+4. **inventory_analytics**: Stock cover days analysis - how many days of inventory remaining based on sales velocity
+   - Examples: "Calculate stock cover days", "Show products with stock cover less than 30 days", "Top 10 products with lowest stock cover", "Show critical items", "Which products are running low", "Products with low coverage", "Stock cover analysis", "Inventory turnover rate", "Calculate stock rotation"
 
 **Important Guidelines:**
 - Focus on the user's INTENT, not just keywords
 - Consider context and business purpose
-- "Show" can mean different things: "Show data" = query, "Show chart" = visualize, "Show report" = report
+- "Show" can mean different things: "Show data" = query, "Show chart" = visualize
 - "Display" usually means visualize when referring to charts/graphs
-- "Generate" or "Create" usually means report when referring to business documents
+- Questions about "stock cover", "days of stock", "coverage" are ALWAYS inventory_analytics (not query)
+- Questions about "restock", "replenish", "critical", "warning" are inventory_analytics
+- Questions about "turnover", "rotation", "velocity" are inventory_analytics
+- Simple filters like "products WHERE price > 100" = query
+- Complex metrics like "stock cover < 30 days" = inventory_analytics
 
 **Question to classify:** "{user_question}"
 
 **Return result in JSON format:**
 {{
-    "intent": "query|visualize|report|schema",
+    "intent": "query|visualize|schema|inventory_analytics",
     "confidence": 0.95,
     "reasoning": "Detailed explanation of why this classification was chosen"
 }}
@@ -86,7 +90,7 @@ You are an expert intent classifier for warehouse management systems. Analyze th
                 result = json.loads(content)
             
             # Validate intent
-            valid_intents = ["query", "visualize", "report", "schema"]
+            valid_intents = ["query", "visualize", "schema", "inventory_analytics"]
             if result.get("intent") not in valid_intents:
                 result["intent"] = "query"  # Default fallback
                 result["confidence"] = 0.5
@@ -109,16 +113,3 @@ You are an expert intent classifier for warehouse management systems. Analyze th
         result = self.classify_intent(user_question)
         return result["intent"] == "visualize"
     
-    def is_report_intent(self, user_question: str) -> bool:
-        """
-        Check if it's a report intent
-        """
-        result = self.classify_intent(user_question)
-        return result["intent"] == "report"
-    
-    def is_alert_intent(self, user_question: str) -> bool:
-        """
-        Check if it's an alert intent
-        """
-        result = self.classify_intent(user_question)
-        return result["intent"] == "alert"

@@ -6,20 +6,21 @@ Quyết định gọi agent nào dựa trên intent classification
 from agents.intent_agent import IntentClassificationAgent
 from agents.sql_agent import generate_sql
 from agents.viz_agent import VisualizationAgent
-from agents.report_agent import ReportAgent
 from agents.response_agent import ResponseAgent
-from db.connection import get_db, run_sql_unified
+from agents.analytics_agent import AnalyticsAgent
+from db.connection import get_db, run_sql_unified, get_postgres_url
 from langsmith.run_helpers import traceable
 import pandas as pd
 import time
+import re
 
 
 class OrchestratorAgent:
-    def __init__(self):
+    def __init__(self, db_type: str = "postgresql"):
         self.intent_agent = IntentClassificationAgent()
-        self.report_agent = ReportAgent()
         self.response_agent = ResponseAgent()
         self.viz_agent = VisualizationAgent()
+        self.analytics_agent = AnalyticsAgent(db_type=db_type)
     
     @traceable(name="orchestrator.run_agent")
     def run_agent(self, user_question: str, db_type: str = "postgresql", 
@@ -67,14 +68,15 @@ class OrchestratorAgent:
                 debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps, "context": {"db_type": db_type, "examples_path": examples_path, "top_k": top_k}}
             )
         
-        elif intent == "report":
-            return self._handle_report_intent(
-                user_question, db_type, use_retriever, examples_path, top_k,
-                debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps, "context": {"db_type": db_type, "examples_path": examples_path, "top_k": top_k}}
-            )
         
         elif intent == "schema":
-            return self._handle_schema_intent(user_question, db_path)
+            return self._handle_schema_intent(user_question, db_type)
+        
+        elif intent == "inventory_analytics":
+            return self._handle_inventory_analytics_intent(
+                user_question, db_type,
+                debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps}
+            )
         
         else:
             # Fallback về query
@@ -86,17 +88,18 @@ class OrchestratorAgent:
         try:
             # Generate SQL
             if db_type == "postgresql":
-                db = get_db("postgresql://inventory_user:inventory_pass@localhost:5432/inventory_db", "postgresql")
+                db = get_db(get_postgres_url(), "postgresql")
             else:
                 db = get_db("data/inventory.db", "sqlite")
             t_sql0 = time.perf_counter()
-            result = generate_sql(
+            result, gen_debug = generate_sql(
                 question=user_question,
                 db=db,
                 model="openai/gpt-oss-20b",
                 examples_path=examples_path,
                 top_k=top_k,
-                use_semantic_search=use_retriever
+                use_semantic_search=use_retriever,
+                return_debug=True,
             )
             t_sql1 = time.perf_counter()
             (debug_base or {}).get("steps", []).append({
@@ -114,7 +117,8 @@ class OrchestratorAgent:
                     "sql": "Schema Information",
                     "data": None,
                     "schema_info": result,
-                    "message": "📋 Database schema information retrieved successfully!"
+                    "message": "📋 Database schema information retrieved successfully!",
+                    "debug": {**(debug_base or {}), "sql_generate": gen_debug},
                 }
             
             if not result:
@@ -122,7 +126,8 @@ class OrchestratorAgent:
                     "success": False,
                     "error": "Unable to generate SQL query",
                     "intent": "query",
-                    "agent": "sql_agent"
+                    "agent": "sql_agent",
+                    "debug": {**(debug_base or {}), "sql_generate": gen_debug},
                 }
             
             # Execute SQL
@@ -139,7 +144,9 @@ class OrchestratorAgent:
                     "success": False,
                     "error": f"SQL execution error: {error}",
                     "intent": "query",
-                    "agent": "sql_agent"
+                    "agent": "sql_agent",
+                    "sql": result,
+                    "debug": {**(debug_base or {}), "sql_generate": gen_debug},
                 }
             
             nl = self.response_agent.generate_response(user_question, df, result)
@@ -156,6 +163,7 @@ class OrchestratorAgent:
                     **(debug_base or {}),
                     "t_sql_generate_ms": (t_sql1 - t_sql0)*1000,
                     "t_sql_execute_ms": (t_exec1 - t_exec0)*1000,
+                    "sql_generate": gen_debug,
                 }
             }
             
@@ -173,17 +181,18 @@ class OrchestratorAgent:
         try:
             # Generate SQL
             if db_type == "postgresql":
-                db = get_db("postgresql://inventory_user:inventory_pass@localhost:5432/inventory_db", "postgresql")
+                db = get_db(get_postgres_url(), "postgresql")
             else:
                 db = get_db("data/inventory.db", "sqlite")
             t_sql0 = time.perf_counter()
-            sql = generate_sql(
+            sql, gen_debug = generate_sql(
                 question=user_question,
                 db=db,
                 model="openai/gpt-oss-20b",
                 examples_path=examples_path,
                 top_k=top_k,
-                use_semantic_search=use_retriever
+                use_semantic_search=use_retriever,
+                return_debug=True,
             )
             t_sql1 = time.perf_counter()
             (debug_base or {}).get("steps", []).append({
@@ -197,7 +206,8 @@ class OrchestratorAgent:
                     "success": False,
                     "error": "Unable to generate SQL query",
                     "intent": "visualize",
-                    "agent": "viz_agent"
+                    "agent": "viz_agent",
+                    "debug": {**(debug_base or {}), "sql_generate": gen_debug},
                 }
             
             # Execute SQL
@@ -214,7 +224,9 @@ class OrchestratorAgent:
                     "success": False,
                     "error": f"SQL execution error: {error}",
                     "intent": "visualize",
-                    "agent": "viz_agent"
+                    "agent": "viz_agent",
+                    "sql": sql,
+                    "debug": {**(debug_base or {}), "sql_generate": gen_debug},
                 }
             
             if df.empty:
@@ -250,6 +262,7 @@ class OrchestratorAgent:
                     "t_sql_generate_ms": (t_sql1 - t_sql0)*1000,
                     "t_sql_execute_ms": (t_exec1 - t_exec0)*1000,
                     "t_viz_ms": (t_viz1 - t_viz0)*1000,
+                    "sql_generate": gen_debug,
                 }
             }
             
@@ -261,86 +274,9 @@ class OrchestratorAgent:
                 "agent": "viz_agent"
             }
     
-    def _handle_report_intent(self, user_question: str, db_type: str, use_retriever: bool, 
-                            examples_path: str, top_k: int) -> dict:
-        """Handle report intent - Generate reports"""
-        try:
-            # Parse report type from user question
-            report_type = self._parse_report_type(user_question)
-            params = self._parse_report_params(user_question)
-            
-            # Generate report
-            result = self.report_agent.generate_report(
-                report_type=report_type,
-                db_path=db_path,
-                params=params
-            )
-            
-            if not result["success"]:
-                return {
-                    "success": False,
-                    "error": result["error"],
-                    "intent": "report",
-                    "agent": "report_agent"
-                }
-            
-            return {
-                "success": True,
-                "intent": "report",
-                "agent": "report_agent",
-                "report_type": result["report_type"],
-                "title": result["title"],
-                "description": result["description"],
-                "data": result["data"],
-                "summary": result["summary"],
-                "parameters": result["parameters"],
-                "message": result["message"]
-            }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Report processing error: {str(e)}",
-                "intent": "report",
-                "agent": "report_agent"
-            }
     
-    def _parse_report_type(self, user_question: str) -> str:
-        """Parse report type from user question"""
-        question_lower = user_question.lower()
-        
-        if any(word in question_lower for word in ["low stock", "low inventory", "below threshold"]):
-            return "low_stock"
-        elif any(word in question_lower for word in ["top", "best", "selling", "performance"]):
-            return "top_products"
-        elif any(word in question_lower for word in ["category", "categories", "by category"]):
-            return "category_summary"
-        elif any(word in question_lower for word in ["value", "valuation", "worth", "total value"]):
-            return "inventory_valuation"
-        elif any(word in question_lower for word in ["overstock", "excess", "too much"]):
-            return "overstock"
-        else:
-            # Default to low stock report
-            return "low_stock"
     
-    def _parse_report_params(self, user_question: str) -> dict:
-        """Parse parameters from user question"""
-        import re
-        params = {}
-        
-        # Extract threshold for low stock/overstock
-        threshold_match = re.search(r'(\d+)\s*(?:units?|items?)?', user_question.lower())
-        if threshold_match:
-            params["threshold"] = int(threshold_match.group(1))
-        
-        # Extract limit for top products
-        limit_match = re.search(r'top\s*(\d+)', user_question.lower())
-        if limit_match:
-            params["limit"] = int(limit_match.group(1))
-        
-        return params
-    
-    def _handle_schema_intent(self, user_question: str, db_path: str) -> dict:
+    def _handle_schema_intent(self, user_question: str, db_type: str) -> dict:
         """Handle schema intent - Database structure information"""
         try:
             from agents.sql_agent import get_schema_info
@@ -367,4 +303,183 @@ class OrchestratorAgent:
                 "error": f"Schema processing error: {str(e)}",
                 "intent": "schema",
                 "agent": "schema_agent"
+            }
+    
+    def _extract_top_n(self, question: str) -> int:
+        """Extract 'top N' from question, default to 20"""
+        # Tìm pattern "top 10", "top 20", etc.
+        match = re.search(r'\btop\s+(\d+)\b', question.lower())
+        if match:
+            return int(match.group(1))
+        
+        # Nếu có từ "critical" or "urgent" or "warning" -> chỉ show critical/warning
+        if any(word in question.lower() for word in ['critical', 'urgent', 'cảnh báo', 'khẩn cấp']):
+            return 10  # Default 10 for critical
+        
+        # Default: top 20
+        return 20
+    
+    def _handle_inventory_analytics_intent(self, user_question: str, db_type: str, debug_base: dict | None = None) -> dict:
+        """Handle inventory analytics intent - FOCUS: Stock Cover Days only"""
+        try:
+            question_lower = user_question.lower()
+            
+            # Extract top N from question
+            limit = self._extract_top_n(user_question)
+            
+            # Determine analytics type: Stock Cover vs Turnover
+            is_turnover = any(x in question_lower for x in ['turnover', 'rotation', 'vòng quay', 'tốc độ bán'])
+            
+            if is_turnover:
+                df = self.analytics_agent.calculate_inventory_turnover()
+                analytics_type = "inventory_turnover"
+                if df.empty:
+                    return {
+                        "success": False,
+                        "error": "No turnover data available",
+                        "intent": "inventory_analytics",
+                        "agent": "analytics_agent"
+                    }
+                
+                # Check for "lowest" or "slowest" (Bottom performing items)
+                if any(x in question_lower for x in ['low', 'lowest', 'slow', 'chậm', 'bottom', 'ít nhất']):
+                    df = df.sort_values('turnover_ratio', ascending=True)
+
+                # Apply limit
+                df = df.head(limit)
+                
+                # SIMPLIFY TABLE for Turnover
+                cols_to_keep = [
+                    'sku_name', 'turnover_ratio', 'days_to_sell_inventory', 
+                    'avg_inventory', 'total_sales_qty'
+                ]
+                existing_cols = [c for c in cols_to_keep if c in df.columns]
+                df = df[existing_cols]
+                
+                rename_map = {
+                    'sku_name': 'Product Name',
+                    'turnover_ratio': 'Turnover Rate',
+                    'days_to_sell_inventory': 'Days to Sell',
+                    'avg_inventory': 'Avg Stock',
+                    'total_sales_qty': 'Total Sold'
+                }
+                df = df.rename(columns=rename_map)
+                
+                # Format "Days to Sell" for better display: None -> "Dead Stock"
+                if 'Days to Sell' in df.columns:
+                    df['Days to Sell'] = df['Days to Sell'].fillna('Dead Stock').astype(str)
+                
+            else:
+                # Default: Stock Cover Days analysis
+                df = self.analytics_agent.calculate_stock_cover_days()
+                analytics_type = "stock_cover_days"
+                
+                if df.empty:
+                    return {
+                        "success": False,
+                        "error": "No stock cover data available",
+                        "intent": "inventory_analytics",
+                        "agent": "analytics_agent"
+                    }
+                
+                # Extract threshold from question (e.g., "less than 30 days", "under 45 days")
+                threshold = None
+                threshold_patterns = [
+                    r'(?:less than|under|below|dưới|nhỏ hơn)\s+(\d+)\s*day',
+                    r'(?:greater than|above|over|trên|lớn hơn)\s+(\d+)\s*day',
+                ]
+                
+                for pattern in threshold_patterns:
+                    match = re.search(pattern, question_lower)
+                    if match:
+                        threshold = int(match.group(1))
+                        is_less_than = any(word in pattern for word in ['less', 'under', 'below', 'dưới', 'nhỏ'])
+                        break
+                
+                # Filter based on question intent
+                if threshold is not None:
+                    # Filter by specific threshold
+                    if is_less_than:
+                        df = df[(df['stock_cover_days'].notna()) & (df['stock_cover_days'] < threshold)]
+                    else:
+                        df = df[(df['stock_cover_days'].notna()) & (df['stock_cover_days'] > threshold)]
+                elif 'critical' in question_lower and 'warning' not in question_lower:
+                    # CHỈ critical items (< 15 days)
+                    df = df[df['stock_status'] == 'Critical']
+                elif any(x in question_lower for x in ['warning', 'cảnh báo', 'risk', 'danger', 'run out', 'running out', 'hết hàng', 'nguy cơ']):
+                    # Warning + Critical (< 30 days)
+                    df = df[df['stock_status'].isin(['Critical', 'Warning', 'At Risk'])]
+                elif any(x in question_lower for x in ['low', 'lowest', 'sắp hết', 'ít nhất']):
+                    # Top N lowest stock cover (exclude No Sales)
+                    df = df[df['stock_status'] != 'No Sales']
+                    df = df.sort_values('stock_cover_days', ascending=True)
+                else:
+                    # Default: exclude "No Sales" items
+                    df = df[df['stock_status'] != 'No Sales']
+                
+                # Apply limit AFTER filtering
+                df = df.head(limit)
+                
+                # SIMPLIFY TABLE: Select and rename columns for cleaner display
+                cols_to_keep = [
+                    'sku_id', 'sku_name', 'current_inventory_quantity', 
+                    'avg_daily_sales', 'stock_cover_days', 'stock_status'
+                ]
+                
+                # Check if columns exist (sometimes avg_daily_sales might be missing if no sales)
+                existing_cols = [c for c in cols_to_keep if c in df.columns]
+                df = df[existing_cols]
+                
+                # Rename for display
+                rename_map = {
+                    'sku_id': 'SKU ID',
+                    'sku_name': 'Product Name', 
+                    'current_inventory_quantity': 'Stock',
+                    'avg_daily_sales': 'Sales/Day',
+                    'stock_cover_days': 'Cover Days',
+                    'stock_status': 'Status'
+                }
+                df = df.rename(columns=rename_map)
+            
+            if df.empty:
+                return {
+                    "success": False,
+                    "error": "No data available for this analytics request",
+                    "intent": "inventory_analytics",
+                    "agent": "analytics_agent"
+                }
+
+            # Generate natural language summary
+            nl_summary = self.analytics_agent.generate_analytics_report(user_question, df)
+            
+            # Generate table markdown (modified to remove context note)
+            table_md = None
+            try:
+                df_for_md = df.copy()
+                for col in df_for_md.select_dtypes(include=["number"]).columns:
+                    df_for_md[col] = df_for_md[col].round(2)
+                table_md = df_for_md.to_markdown(index=False)
+            except Exception:
+                table_md = None
+            
+            return {
+                "success": True,
+                "intent": "inventory_analytics",
+                "agent": "analytics_agent",
+                "analytics_type": analytics_type,
+                "sql": None,
+                "data": df,
+                "response": nl_summary,
+                "response_table_md": table_md,
+                "message": f"📊 Analytics completed! Generated {len(df)} insights.",
+                "debug": debug_base
+            }
+            
+        except Exception as e:
+            import traceback
+            return {
+                "success": False,
+                "error": f"Analytics processing error: {str(e)}\n{traceback.format_exc()}",
+                "intent": "inventory_analytics",
+                "agent": "analytics_agent"
             }

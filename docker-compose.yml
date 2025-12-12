@@ -20,6 +20,40 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - inventory_network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: inventory_app
+    ports:
+      - "8501:8501"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-inventory-text-to-sql}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=inventory_db
+      - DB_USER=inventory_user
+      - DB_PASSWORD=inventory_pass
+    volumes:
+      - ./data:/app/data
+      - ./prompts:/app/prompts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - inventory_network
 
 volumes:
   postgres_data:
+
+networks:
+  inventory_network:
+    driver: bridge

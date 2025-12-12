@@ -79,16 +79,19 @@ def extract_select_sql(text: str) -> str | None:
     m = re.search(r"```sql\s*([\s\S]*?)```", text, re.IGNORECASE)
     if m:
         candidate = m.group(1).strip()
-        if candidate.lower().startswith("select"):
+        if candidate.lower().startswith(("select", "with")):
             return candidate.rstrip(";")
     m2 = re.search(r"```\s*([\s\S]*?)```", text, re.IGNORECASE)
     if m2:
         block = m2.group(1).strip()
-        if block.lower().startswith("select"):
+        if block.lower().startswith(("select", "with")):
             return block.rstrip(";")
     m3 = re.search(r"(SELECT[\s\S]+)$", text, re.IGNORECASE)
     if m3:
         return m3.group(1).strip().rstrip(";")
+    m4 = re.search(r"(WITH[\s\S]+)$", text, re.IGNORECASE)
+    if m4:
+        return m4.group(1).strip().rstrip(";")
     return None
 
 
@@ -180,16 +183,17 @@ def generate_sql(
     else:
         prompt = (
             "You are a SQL assistant for a PostgreSQL database. "
-            "Return exactly one SELECT statement only, enclosed in a ```sql``` block, with no explanations. "
+            "Return exactly one query enclosed in a ```sql``` block, with no explanations. "
+            "You may use CTEs (WITH ... AS ...) if helpful, or a single SELECT. "
             "Use accurate table/column names from the schema. Avoid destructive queries. "
-            "Do NOT include LIMIT unless the user explicitly asks for it.\n" + fewshot_text + "\n" 
+            "Do NOT include LIMIT unless the user explicitly asks for it.\n" + fewshot_text + "\n"
             f"User question: {question}"
         )
     
     # Add schema context at the beginning of prompt for better visibility
     prompt = schema_context + prompt
 
-    debug: Dict[str, object] = {"model": model, **meta, "retry": False, "prompt_snippet": prompt[:1500]}
+    debug: Dict[str, object] = {"model": model, **meta, "retry": False, "prompt_snippet": prompt[:1500], "prompt_full": prompt}
 
     # Directly invoke LLM with our composed prompt to avoid LangChain's default SQL prompt/schema
     raw_msg = llm.invoke(prompt)
@@ -202,7 +206,8 @@ def generate_sql(
     if not sql:
         debug["retry"] = True
         retry_prompt = (
-            "Output ONLY one PostgreSQL-compatible SELECT statement. No backticks, no explanations. "
+            "Output ONLY one PostgreSQL-compatible query (begin with SELECT or WITH). "
+            "You may use CTEs (WITH ... AS ...) if helpful. No backticks, no explanations. "
             "Do NOT include LIMIT unless explicitly requested.\n"
             f"User question: {question}"
         )

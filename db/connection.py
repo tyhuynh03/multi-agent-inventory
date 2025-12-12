@@ -10,10 +10,23 @@ from langchain_community.utilities import SQLDatabase
 from utils.logger import traceable
 
 
+def get_postgres_url() -> str:
+	"""Tạo PostgreSQL connection URL từ environment variables"""
+	host = os.getenv('DB_HOST', 'localhost')
+	port = os.getenv('DB_PORT', '5432')
+	database = os.getenv('DB_NAME', 'inventory_db')
+	user = os.getenv('DB_USER', 'inventory_user')
+	password = os.getenv('DB_PASSWORD', 'inventory_pass')
+	return f"postgresql://{user}:{password}@{host}:{port}/{database}"
+
+
 def get_sqlalchemy_url(db_path: str, db_type: str = "sqlite") -> str:
 	"""Tạo SQLAlchemy URL cho SQLite hoặc PostgreSQL"""
 	if db_type.lower() == "postgresql":
-		return db_path  # db_path đã là connection string
+		# Nếu db_path là connection string đầy đủ, dùng nó; nếu không build từ env vars
+		if db_path and db_path.startswith("postgresql://"):
+			return db_path
+		return get_postgres_url()
 	else:
 		abs_path = os.path.abspath(db_path)
 		return f"sqlite:///{abs_path}"
@@ -28,12 +41,19 @@ def get_db(db_path: str, db_type: str = "sqlite") -> SQLDatabase:
 def get_postgres_connection():
 	"""Tạo kết nối trực tiếp đến PostgreSQL"""
 	try:
+		# Sử dụng biến môi trường để hỗ trợ Docker
+		host = os.getenv('DB_HOST', 'localhost')
+		port = int(os.getenv('DB_PORT', '5432'))
+		database = os.getenv('DB_NAME', 'inventory_db')
+		user = os.getenv('DB_USER', 'inventory_user')
+		password = os.getenv('DB_PASSWORD', 'inventory_pass')
+		
 		conn = psycopg2.connect(
-			host='localhost',
-			port=5432,
-			database='inventory_db',
-			user='inventory_user',
-			password='inventory_pass'
+			host=host,
+			port=port,
+			database=database,
+			user=user,
+			password=password
 		)
 		return conn
 	except Exception as e:
@@ -81,9 +101,16 @@ def run_postgres(sql: str) -> Tuple[pd.DataFrame, Optional[str]]:
         return pd.DataFrame(), "Only SELECT statements are allowed for safety."
     
     try:
+        # Sử dụng biến môi trường để hỗ trợ Docker
+        host = os.getenv('DB_HOST', 'localhost')
+        port = os.getenv('DB_PORT', '5432')
+        database = os.getenv('DB_NAME', 'inventory_db')
+        user = os.getenv('DB_USER', 'inventory_user')
+        password = os.getenv('DB_PASSWORD', 'inventory_pass')
+        
         # Sử dụng SQLAlchemy thay vì psycopg2 trực tiếp
         from sqlalchemy import create_engine
-        engine = create_engine("postgresql://inventory_user:inventory_pass@localhost:5432/inventory_db")
+        engine = create_engine(f"postgresql://{user}:{password}@{host}:{port}/{database}")
         df = pd.read_sql_query(sql, engine)
         return df, None
     except Exception as e:
