@@ -41,7 +41,9 @@ Các mục tiêu cụ thể bao gồm:
     - Chuyển đổi câu hỏi tự nhiên thành truy vấn cơ sở dữ liệu (Text-to-SQL).
     - Phân tích các chỉ số kho hàng nâng cao (Stock Cover, Turnover Rate).
     - Trực quan hóa dữ liệu tự động (Data Visualization).
-- **Đánh giá thực nghiệm:** Kiểm thử độ chính xác của các câu lệnh SQL được sinh ra và khả năng xử lý các câu hỏi phức tạp, đa ngữ cảnh của hệ thống trên tập dữ liệu mẫu.
+-
+
+ **Đánh giá thực nghiệm:** Kiểm thử độ chính xác của các câu lệnh SQL được sinh ra và khả năng xử lý các câu hỏi phức tạp, đa ngữ cảnh của hệ thống trên tập dữ liệu mẫu.
 1.3. Phạm vi nghiên cứu
 **Phạm vi về nội dung:**
 - Đề tài tập trung giải quyết bài toán truy xuất và phân tích thông tin trong quản lý kho hàng.
