@@ -400,7 +400,10 @@ with st.sidebar:
 tab_text2sql, tab_sql_console = st.tabs(["AI Assistant", "SQL Console"]) 
 
 with tab_text2sql:
-    st.write("Enter your question in English. The app will generate a `SELECT` query and run it on PostgreSQL.")
+    st.markdown("""
+    I am your AI Assistant, powered by LLM & Multi-Agent technology.
+    """)
+    
     
     
     
@@ -607,6 +610,11 @@ with tab_text2sql:
                             if "total_products" in summary:
                                 summary_text += f", {summary['total_products']} products"
                             response_parts.append(summary_text)
+
+                        # Add schema info if available (Diagram)
+                        if "schema_info" in result and result["schema_info"]:
+                             with st.expander("📋 Database Schema Diagram", expanded=True):
+                                 st.markdown(f"```mermaid\n{result['schema_info']}\n```")
                         
                         # Display response content (no markdown table)
                         full_response = "\n\n".join(response_parts)
