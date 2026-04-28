@@ -316,8 +316,8 @@ class OrchestratorAgent:
         if any(word in question.lower() for word in ['critical', 'urgent', 'cảnh báo', 'khẩn cấp']):
             return 10  # Default 10 for critical
         
-        # Default: top 20
-        return 20
+        # Default: top 100
+        return 100
     
     def _handle_inventory_analytics_intent(self, user_question: str, db_type: str, debug_base: dict | None = None) -> dict:
         """Handle inventory analytics intent - FOCUS: Stock Cover Days only"""
@@ -409,9 +409,13 @@ class OrchestratorAgent:
                 elif any(x in question_lower for x in ['warning', 'cảnh báo', 'risk', 'danger', 'run out', 'running out', 'hết hàng', 'nguy cơ']):
                     # Warning + Critical (< 30 days)
                     df = df[df['stock_status'].isin(['Critical', 'Warning', 'At Risk'])]
-                elif any(x in question_lower for x in ['low', 'lowest', 'sắp hết', 'ít nhất']):
-                    # Top N lowest stock cover (exclude No Sales)
+                elif any(x in question_lower for x in ['lowest', 'min', 'minimum', 'ít nhất', 'nhỏ nhất']):
+                    # Top N lowest stock cover (exclude No Sales) - Relative comparison
                     df = df[df['stock_status'] != 'No Sales']
+                    df = df.sort_values('stock_cover_days', ascending=True)
+                elif any(x in question_lower for x in ['low', 'shortage', 'sắp hết', 'warning', 'risk', 'danger', 'cảnh báo', 'khẩn cấp']):
+                    # Strict filtering for low stock items (absolute condition)
+                    df = df[df['stock_status'].isin(['Critical', 'Warning'])]
                     df = df.sort_values('stock_cover_days', ascending=True)
                 else:
                     # Default: exclude "No Sales" items
