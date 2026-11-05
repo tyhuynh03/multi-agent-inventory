@@ -12,11 +12,24 @@ import json
 import re
 from pathlib import Path
 
+from pydantic import BaseModel, Field, field_validator
+
+# File này sống trong agents/ nên repo root luôn là cha của cha nó. Đi đường dẫn
+# tương đối ("data/metadata_db.yml") chỉ ổn khi tiến trình chạy từ repo root —
+# backend/ uvicorn chạy từ backend/, hậu quả là schema rơi về chuỗi fallback 32 ký tự
+# và model bịa cột (customer_id, month, product_name).
+ROOT_DIR = Path(__file__).resolve().parents[1]
+
+
+def resolve_repo_path(path_str: str) -> Path:
+    path = Path(path_str)
+    return path if path.is_absolute() else ROOT_DIR / path
+
 
 def load_metadata_yaml(metadata_path: str = "data/metadata_db.yml") -> str:
     """Load database metadata from YAML file and format for prompt"""
     try:
-        with open(metadata_path, 'r', encoding='utf-8') as f:
+        with open(resolve_repo_path(metadata_path), 'r', encoding='utf-8') as f:
             metadata = yaml.safe_load(f)
         
         # Format metadata for prompt (full version)
@@ -76,6 +89,10 @@ def is_schema_question(question: str) -> bool:
 
 
 def extract_select_sql(text: str) -> str | None:
+    """Đường lùi: khi model không trả về JSON đúng khung, mò query trong text thô.
+
+    Không còn là đường chính — xem `_ask_for_sql`.
+    """
     m = re.search(r"```sql\s*([\s\S]*?)```", text, re.IGNORECASE)
     if m:
         candidate = m.group(1).strip()
@@ -86,13 +103,80 @@ def extract_select_sql(text: str) -> str | None:
         block = m2.group(1).strip()
         if block.lower().startswith(("select", "with")):
             return block.rstrip(";")
-    m3 = re.search(r"(SELECT[\s\S]+)$", text, re.IGNORECASE)
-    if m3:
-        return m3.group(1).strip().rstrip(";")
+    # WITH phải được thử TRƯỚC SELECT: với CTE, regex SELECT bắt từ SELECT đầu tiên
+    # bên trong ngoặc, cắt mất "WITH x AS (" và trả về câu SQL thừa dấu ")".
     m4 = re.search(r"(WITH[\s\S]+)$", text, re.IGNORECASE)
     if m4:
         return m4.group(1).strip().rstrip(";")
+    m3 = re.search(r"(SELECT[\s\S]+)$", text, re.IGNORECASE)
+    if m3:
+        return m3.group(1).strip().rstrip(";")
     return None
+
+
+class SqlQuery(BaseModel):
+    """Khung phản hồi duy nhất: model chỉ còn một ô để điền.
+
+    Đây là điểm khác biệt với bản regex — text thô không còn bị 'cắt nhầm' nữa,
+    và validator chặn câu không bắt đầu bằng SELECT/WITH ngay tại đây thay vì
+    chờ SQL guard từ chối lúc chạy.
+    """
+
+    sql: str = Field(
+        description=(
+            "Exactly one read-only PostgreSQL query answering the user question. "
+            "Begin with SELECT or WITH (CTEs are encouraged when they make the query clearer). "
+            "Raw SQL only: no markdown fences, no explanation, no trailing semicolon. "
+            "Use only tables and columns present in the schema. "
+            "Do NOT add LIMIT unless the user explicitly asked for one."
+        )
+    )
+
+    @field_validator("sql")
+    @classmethod
+    def _strip_fences_and_check(cls, value: str) -> str:
+        cleaned = value.strip()
+        cleaned = re.sub(r"^```(?:sql)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+        cleaned = cleaned.strip().rstrip(";").strip()
+        if not cleaned.lower().startswith(("select", "with")):
+            raise ValueError("truy vấn phải bắt đầu bằng SELECT hoặc WITH")
+        return cleaned
+
+
+def _ask_for_sql(llm: ChatGroq, prompt: str) -> Tuple[str | None, str, str]:
+    """Gọi model một lần, trả (sql, cách_lấy_được, text_thô). Không ném exceptions.
+
+    method='json_schema' chứ không phải 'function_calling': gpt-oss trên Groq trả
+    lời bằng văn bản rồi mới gọi tool, và Groq báo lỗi
+    "Tool choice is required, but model did not call a tool" với đường tool-calling.
+    """
+    try:
+        structured = llm.with_structured_output(SqlQuery, method="json_schema", include_raw=True)
+        result = structured.invoke(prompt)
+    except Exception as error:
+        # Model/provider không hỗ trợ structured output -> quay về text thô + regex.
+        raw_msg = llm.invoke(prompt)
+        text = getattr(raw_msg, "content", raw_msg)
+        text = text if isinstance(text, str) else str(text)
+        fallback = extract_select_sql(text)
+        how = f"regex_after_schema_error({type(error).__name__})" if fallback else "schema_error"
+        return fallback, how, text
+
+    raw = result.get("raw")
+    text = getattr(raw, "content", "") if raw is not None else ""
+    if not isinstance(text, str):
+        text = str(text)
+
+    parsed = result.get("parsed")
+    if parsed is not None:
+        return parsed.sql, "json_schema", text
+
+    fallback = extract_select_sql(text)
+    if fallback:
+        return fallback, "regex_fallback", text
+    return None, "unparsed", text
+
 
 
 def build_fewshot_block_from_examples(examples_path: str, question: str, top_k: int = 1, use_semantic_search: bool = True) -> Tuple[str, Dict[str, object]]:
@@ -108,6 +192,8 @@ def build_fewshot_block_from_examples(examples_path: str, question: str, top_k: 
     Returns:
         Tuple of (fewshot_text, metadata)
     """
+    examples_path = str(resolve_repo_path(examples_path))
+
     if use_semantic_search:
         try:
             from rag.rag_retriever import get_rag_retriever
@@ -176,15 +262,20 @@ def generate_sql(
     schema_context = load_metadata_yaml()
     
     # Load prompt template from prompts/sql_prompt.txt
-    template_path = Path("prompts/sql_prompt.txt")
+    template_path = resolve_repo_path("prompts/sql_prompt.txt")
     if template_path.exists():
         template = template_path.read_text(encoding="utf-8")
-        prompt = template.replace("{fewshot}", fewshot_text).replace("{question}", question)
+        if fewshot_text.strip():
+            template = template.replace("{fewshot}", fewshot_text)
+        else:
+            # "Examples:" để trống (RAG không qua threshold) làm gpt-oss lười: nó trả
+            # "SELECT 1" hoặc "SELECT * FROM warehouses". Bỏ hẳn mục này còn hơn mời trống.
+            template = re.sub(r"\nExamples:\s*\{fewshot\}\n", "\n", template)
+        prompt = template.replace("{question}", question)
     else:
         prompt = (
             "You are a SQL assistant for a PostgreSQL database. "
-            "Return exactly one query enclosed in a ```sql``` block, with no explanations. "
-            "You may use CTEs (WITH ... AS ...) if helpful, or a single SELECT. "
+            "Write exactly one read-only query, beginning with SELECT or WITH (CTEs allowed). "
             "Use accurate table/column names from the schema. Avoid destructive queries. "
             "Do NOT include LIMIT unless the user explicitly asks for it.\n" + fewshot_text + "\n"
             f"User question: {question}"
@@ -195,30 +286,22 @@ def generate_sql(
 
     debug: Dict[str, object] = {"model": model, **meta, "retry": False, "prompt_snippet": prompt[:1500], "prompt_full": prompt}
 
-    # Directly invoke LLM with our composed prompt to avoid LangChain's default SQL prompt/schema
-    raw_msg = llm.invoke(prompt)
-    text = getattr(raw_msg, "content", raw_msg)
-    if not isinstance(text, str):
-        text = str(text)
+    sql, how, text = _ask_for_sql(llm, prompt)
+    debug["extraction"] = how
     debug["raw_response"] = text[:1500]
 
-    sql = extract_select_sql(text)
     if not sql:
         debug["retry"] = True
         retry_prompt = (
-            "Output ONLY one PostgreSQL-compatible query (begin with SELECT or WITH). "
+            schema_context + "\n"
+            "Answer with one PostgreSQL-compatible query (begin with SELECT or WITH). "
             "You may use CTEs (WITH ... AS ...) if helpful. No backticks, no explanations. "
             "Do NOT include LIMIT unless explicitly requested.\n"
             f"User question: {question}"
         )
-        retry_text_msg = llm.invoke(retry_prompt)
-        retry_text = getattr(retry_text_msg, "content", retry_text_msg)
-        if not isinstance(retry_text, str):
-            retry_text = str(retry_text)
-        if retry_text.strip().lower().startswith("select"):
-            sql = retry_text.strip().rstrip(";")
-        else:
-            sql = extract_select_sql(retry_text)
+        sql, how, retry_text = _ask_for_sql(llm, retry_prompt)
+        debug["retry_extraction"] = how
+        debug["raw_response_retry"] = retry_text[:1500]
 
     if return_debug:
         return sql, debug
