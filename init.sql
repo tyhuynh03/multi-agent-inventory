@@ -1,15 +1,10 @@
--- Tạo database và user
-CREATE DATABASE inventory_db;
-CREATE USER inventory_user WITH PASSWORD 'inventory_pass';
-GRANT ALL PRIVILEGES ON DATABASE inventory_db TO inventory_user;
-
--- Kết nối đến database mới
-\c inventory_db;
+-- Chạy tự động bởi docker-entrypoint.sh, bên TRONG database inventory_db.
+-- POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD trong docker-compose.yml đã tạo
+-- database + user + quyền sở hữu, nên file này KHÔNG được chứa CREATE DATABASE/CREATE USER
+-- hay \c: trước đây nó làm vậy, entrypoint fail ở dòng 2 và toàn bộ schema không bao giờ được tạo.
 
 -- Cấp quyền cho user
 GRANT ALL ON SCHEMA public TO inventory_user;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO inventory_user;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO inventory_user;
 
 -- Tạo extension cho vector search (nếu cần)
 -- CREATE EXTENSION IF NOT EXISTS vector;
@@ -71,7 +66,7 @@ CREATE INDEX IF NOT EXISTS idx_sales_customer_type ON sales(customer_type);
 
 -- Tạo view để dễ query
 CREATE OR REPLACE VIEW inventory_summary AS
-SELECT 
+SELECT
     i.sku_id,
     s.sku_name,
     i.warehouse_id,
@@ -87,7 +82,7 @@ JOIN skus s ON i.sku_id = s.sku_id
 JOIN warehouses w ON i.warehouse_id = w.warehouse_code;
 
 CREATE OR REPLACE VIEW sales_summary AS
-SELECT 
+SELECT
     sa.order_date,
     sa.sku_id,
     s.sku_name,
