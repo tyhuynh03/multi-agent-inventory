@@ -17,15 +17,22 @@ def get_postgres_url() -> str:
 	database = os.getenv('DB_NAME', 'inventory_db')
 	user = os.getenv('DB_USER', 'inventory_user')
 	password = os.getenv('DB_PASSWORD', 'inventory_pass')
-	return f"postgresql://{user}:{password}@{host}:{port}/{database}"
+	return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
+
+
+def _force_psycopg2(url: str) -> str:
+	"""SQLAlchemy 2.1 coi 'postgresql://' là psycopg3; repo này chỉ pin psycopg2-binary."""
+	if url.startswith("postgresql://"):
+		return "postgresql+psycopg2://" + url[len("postgresql://"):]
+	return url
 
 
 def get_sqlalchemy_url(db_path: str, db_type: str = "sqlite") -> str:
 	"""Tạo SQLAlchemy URL cho SQLite hoặc PostgreSQL"""
 	if db_type.lower() == "postgresql":
 		# Nếu db_path là connection string đầy đủ, dùng nó; nếu không build từ env vars
-		if db_path and db_path.startswith("postgresql://"):
-			return db_path
+		if db_path and db_path.startswith("postgresql"):
+			return _force_psycopg2(db_path)
 		return get_postgres_url()
 	else:
 		abs_path = os.path.abspath(db_path)
@@ -110,7 +117,7 @@ def run_postgres(sql: str) -> Tuple[pd.DataFrame, Optional[str]]:
         
         # Sử dụng SQLAlchemy thay vì psycopg2 trực tiếp
         from sqlalchemy import create_engine
-        engine = create_engine(f"postgresql://{user}:{password}@{host}:{port}/{database}")
+        engine = create_engine(f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}")
         df = pd.read_sql_query(sql, engine)
         return df, None
     except Exception as e:
