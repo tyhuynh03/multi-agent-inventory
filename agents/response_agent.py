@@ -39,7 +39,8 @@ class ResponseAgent:
 
         system = (
             "You are a helpful and concise analytics assistant. Given a user question and the resulting table, "
-            "respond in 1-2 clear and natural English sentences. "
+            "respond in 1-2 clear and natural sentences IN THE SAME LANGUAGE AS THE QUESTION "
+            "(tiếng Việt nếu câu hỏi bằng tiếng Việt). "
             "Directly answer the user's question based on the data. "
             "Do NOT add extra stats (mean/min/max) unless asked. "
             "Do NOT include code fences or markdown formatting for the text part."
