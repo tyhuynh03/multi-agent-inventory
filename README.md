@@ -2,7 +2,25 @@
 
 Hệ thống quản lý kho hàng thông minh sử dụng Multi-Agent AI với PostgreSQL, LangChain và Groq.
 
-## ⚡ Quick Start (3 bước)
+## ⚡ Quick Start — FastAPI + React (bản mới)
+
+```bash
+# 1. Database
+docker-start.bat                 # hoặc tự chạy PostgreSQL + apply init.sql
+
+# 2. Backend (terminal 1)
+cd backend && python -m venv .venv && .venv/Scripts/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+# 3. Frontend (terminal 2)
+cd web && npm install && npm run dev     # http://localhost:5173
+```
+
+Chi tiết endpoints, env vars và các lớp bảo vệ SQL: [backend/README.md](backend/README.md).
+Tab "Hỏi đáp" cần `GROQ_API_KEY`; tab "SQL console" và "Lược đồ" chạy không cần key.
+
+## Quick Start — Streamlit (bản gốc, vẫn chạy được)
 
 ```bash
 # 1. Tạo file .env và điền GROQ_API_KEY
@@ -240,6 +258,8 @@ Lưu ý:
 ├── 🧠 rag/                        # RAG system
 ├── ⚙️ configs/settings.py         # Configuration
 ├── 🛠️ utils/logger.py            # Logging utilities
+├── backend/                       # FastAPI API (SQL guard + SSE) — xem backend/README.md
+├── ⚛️ web/                        # React + Vite + TypeScript UI
 └── 🖥️ app.py                      # Streamlit interface
 ```
 

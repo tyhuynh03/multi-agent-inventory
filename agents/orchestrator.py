@@ -15,6 +15,16 @@ import time
 import re
 
 
+def _emit(on_event, name: str, data: dict) -> None:
+    """Báo tiến độ cho caller (SSE). Lỗi ở khâu báo cáo không được làm hỏng pipeline."""
+    if on_event is None:
+        return
+    try:
+        on_event(name, data)
+    except Exception:
+        pass
+
+
 class OrchestratorAgent:
     def __init__(self, db_type: str = "postgresql"):
         self.intent_agent = IntentClassificationAgent()
@@ -24,7 +34,8 @@ class OrchestratorAgent:
     
     @traceable(name="orchestrator.run_agent")
     def run_agent(self, user_question: str, db_type: str = "postgresql", 
-                  use_retriever: bool = True, examples_path: str = "data/examples.jsonl", top_k: int = 2) -> dict:
+                  use_retriever: bool = True, examples_path: str = "data/examples.jsonl", top_k: int = 2,
+                  on_event=None) -> dict:
         """
         Điều phối workflow chính
         
@@ -34,6 +45,7 @@ class OrchestratorAgent:
             use_retriever: Có sử dụng RAG không
             examples_path: Đường dẫn file examples
             top_k: Số lượng examples lấy từ RAG
+            on_event: Callable(name, data) báo tiến độ từng bước; None = im lặng (app.py cũ)
             
         Returns:
             dict: Kết quả từ agent tương ứng
@@ -51,7 +63,14 @@ class OrchestratorAgent:
         intent = intent_result["intent"]
         confidence = intent_result["confidence"]
         reasoning = intent_result["reasoning"]
-        
+
+        _emit(on_event, "intent", {
+            "intent": intent,
+            "confidence": confidence,
+            "reasoning": reasoning,
+            "duration_ms": round((t1 - t0) * 1000, 1),
+        })
+
         print(f"🎯 Intent: {intent} (confidence: {confidence:.2f})")
         print(f"💭 Reasoning: {reasoning}")
         
@@ -59,13 +78,15 @@ class OrchestratorAgent:
         if intent == "query":
             return self._handle_query_intent(
                 user_question, db_type, use_retriever, examples_path, top_k,
-                debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps, "context": {"db_type": db_type, "examples_path": examples_path, "top_k": top_k}}
+                debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps, "context": {"db_type": db_type, "examples_path": examples_path, "top_k": top_k}},
+                on_event=on_event
             )
         
         elif intent == "visualize":
             return self._handle_visualize_intent(
                 user_question, db_type, use_retriever, examples_path, top_k,
-                debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps, "context": {"db_type": db_type, "examples_path": examples_path, "top_k": top_k}}
+                debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps, "context": {"db_type": db_type, "examples_path": examples_path, "top_k": top_k}},
+                on_event=on_event
             )
         
         
@@ -75,15 +96,17 @@ class OrchestratorAgent:
         elif intent == "inventory_analytics":
             return self._handle_inventory_analytics_intent(
                 user_question, db_type,
-                debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps}
+                debug_base={"intent_result": intent_result, "t_intent_ms": (t1 - t0)*1000, "steps": steps},
+                on_event=on_event
             )
         
         else:
             # Fallback về query
-            return self._handle_query_intent(user_question, db_type, use_retriever, examples_path, top_k)
+            return self._handle_query_intent(user_question, db_type, use_retriever, examples_path, top_k, on_event=on_event)
     
     def _handle_query_intent(self, user_question: str, db_type: str, use_retriever: bool, 
-                           examples_path: str, top_k: int, debug_base: dict | None = None) -> dict:
+                           examples_path: str, top_k: int, debug_base: dict | None = None,
+                           on_event=None) -> dict:
         """Xử lý query intent - SQL thông thường"""
         try:
             # Generate SQL
@@ -129,8 +152,14 @@ class OrchestratorAgent:
                     "agent": "sql_agent",
                     "debug": {**(debug_base or {}), "sql_generate": gen_debug},
                 }
-            
+
+            _emit(on_event, "sql", {
+                "sql": result,
+                "duration_ms": round((t_sql1 - t_sql0) * 1000, 1),
+            })
+
             # Execute SQL
+            _emit(on_event, "executing", {"sql": result})
             t_exec0 = time.perf_counter()
             df, error = run_sql_unified(result, db_type)
             t_exec1 = time.perf_counter()
@@ -176,7 +205,8 @@ class OrchestratorAgent:
             }
     
     def _handle_visualize_intent(self, user_question: str, db_type: str, use_retriever: bool, 
-                               examples_path: str, top_k: int, debug_base: dict | None = None) -> dict:
+                               examples_path: str, top_k: int, debug_base: dict | None = None,
+                               on_event=None) -> dict:
         """Xử lý visualize intent - SQL + Chart"""
         try:
             # Generate SQL
@@ -209,8 +239,14 @@ class OrchestratorAgent:
                     "agent": "viz_agent",
                     "debug": {**(debug_base or {}), "sql_generate": gen_debug},
                 }
-            
+
+            _emit(on_event, "sql", {
+                "sql": sql,
+                "duration_ms": round((t_sql1 - t_sql0) * 1000, 1),
+            })
+
             # Execute SQL
+            _emit(on_event, "executing", {"sql": sql})
             t_exec0 = time.perf_counter()
             df, error = run_sql_unified(sql, db_type)
             t_exec1 = time.perf_counter()
@@ -238,6 +274,7 @@ class OrchestratorAgent:
                 }
             
             # Plan + Render chart via agent (không tạo summary cho visualize)
+            _emit(on_event, "chart_planning", {"rows": int(len(df))})
             t_viz0 = time.perf_counter()
             viz = self.viz_agent.plan_and_render(user_question, df)
             t_viz1 = time.perf_counter()
@@ -319,7 +356,7 @@ class OrchestratorAgent:
         # Default: top 20
         return 20
     
-    def _handle_inventory_analytics_intent(self, user_question: str, db_type: str, debug_base: dict | None = None) -> dict:
+    def _handle_inventory_analytics_intent(self, user_question: str, db_type: str, debug_base: dict | None = None, on_event=None) -> dict:
         """Handle inventory analytics intent - FOCUS: Stock Cover Days only"""
         try:
             question_lower = user_question.lower()
@@ -329,6 +366,11 @@ class OrchestratorAgent:
             
             # Determine analytics type: Stock Cover vs Turnover
             is_turnover = any(x in question_lower for x in ['turnover', 'rotation', 'vòng quay', 'tốc độ bán'])
+
+            _emit(on_event, "analytics", {
+                "type": "inventory_turnover" if is_turnover else "stock_cover_days",
+                "limit": limit,
+            })
             
             if is_turnover:
                 df = self.analytics_agent.calculate_inventory_turnover()
